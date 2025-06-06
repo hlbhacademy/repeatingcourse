@@ -19,86 +19,120 @@
   <div id="calendar"></div>
 
 <script>
-  const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
+const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-  document.addEventListener('DOMContentLoaded', async function () {
-    const res = await fetch(apiUrl);
-    const data = await res.json();
+// 頁面加下拉式選單
+document.write('<label for="courseSelect">篩選課程：</label><select id="courseSelect"><option value="">全部</option></select>');
 
-    const events = data.map(item => {
-      let date = item["日期"];
-      if (typeof date === "string" && date.includes("T")) {
-        date = date.split("T")[0];
-      }
-      // 1. 替換 / 為 -
-      date = date.replace(/\//g, "-");
-      // 2. 拆成 [年, 月, 日]，補零
-      let [yyyy, mm, dd] = date.split("-");
-      if (mm && mm.length === 1) mm = "0" + mm;
-      if (dd && dd.length === 1) dd = "0" + dd;
-      const dateFixed = `${yyyy}-${mm}-${dd}`;
-      const start = `${dateFixed}T${item["起始時間"]}`;
-      const end = `${dateFixed}T${item["結束時間"]}`;
-      const color = getColorByName(item["課程名稱"]);
-      // 異動自動標紅框
-      const isChanged = item["備註"] && item["備註"].includes("異動");
-      return {
-        title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
-        start,
-        end,
-        backgroundColor: color,
-        classNames: [
-          ...getClass(item),   // 原有條件 class
-          isChanged ? "changed" : ""
-        ],
-        extendedProps: item
-      };
-    });
+let allData = [];
+let calendar = null;
 
-    const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-      initialView: 'dayGridMonth',
-      locale: 'zh-tw',
-      headerToolbar: {
-        left: 'prev,next today',
-        center: 'title',
-        right: 'dayGridMonth,timeGridWeek,listWeek'
-      },
-      events,
-      eventDidMount: function(info) {
-        // 滑鼠移上顯示「所有」欄位
-        const p = info.event.extendedProps;
-        let tooltip = '';
-        for (const key in p) {
-          tooltip += `${key}：${p[key]}\n`;
-        }
-        info.el.title = tooltip;
-      },
-      eventClick: function(info) {
-        // 點擊顯示「所有」欄位
-        const p = info.event.extendedProps;
-        let detail = "";
-        for (const key in p) {
-          detail += `${key}：${p[key]}\n`;
-        }
-        alert(detail);
-      }
-    });
+document.addEventListener('DOMContentLoaded', async function () {
+  const res = await fetch(apiUrl);
+  const data = await res.json();
+  allData = data;
 
-    calendar.render();
+  // 取所有課程名稱，組成下拉選單
+  const courses = [...new Set(data.map(item => getCourseLabel(item)))];
+  const select = document.getElementById('courseSelect');
+  courses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    select.appendChild(opt);
   });
 
-  function getColorByName(name) {
-    const colors = ['#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A','#9370DB','#FF8C00','#20B2AA'];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
-    return colors[hash % colors.length];
-  }
+  renderCalendar(data);
 
-  function getClass(item) {
-    const result = [];
-    if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
-    return result;
-  }
+  // 下拉選單切換時，重新渲染
+  select.addEventListener('change', function () {
+    const value = this.value;
+    if (!value) {
+      renderCalendar(allData);
+    } else {
+      renderCalendar(allData.filter(item => getCourseLabel(item) === value));
+    }
+  });
+});
+
+function getCourseLabel(item) {
+  // 這裡你可依需求修改，範例：「三上 數學A」
+  // 課程名稱常常有年級、科目等關鍵字
+  // 這裡假設「課程名稱」已經是你想顯示的內容，如需更精細可自行分割
+  // 可用正則從「課程名稱」撈出「年級」、「科目」等
+  return item["課程名稱"].replace(/\s+/g, ' ').trim();
+}
+
+function renderCalendar(data) {
+  const events = data.map(item => {
+    let date = item["日期"];
+    if (typeof date === "string" && date.includes("T")) date = date.split("T")[0];
+    date = date.replace(/\//g, "-");
+    let [yyyy, mm, dd] = date.split("-");
+    if (mm && mm.length === 1) mm = "0" + mm;
+    if (dd && dd.length === 1) dd = "0" + dd;
+    const dateFixed = `${yyyy}-${mm}-${dd}`;
+    // 優先顯示「起訖時間」、「課程」、「教師」等重點
+    const startTime = item["起始時間"]?.slice(0,5);
+    const endTime = item["結束時間"]?.slice(0,5);
+    const title = `${startTime}-${endTime} ${getCourseLabel(item)}`;
+    return {
+      title: title,
+      start: `${dateFixed}T${item["起始時間"]}`,
+      end: `${dateFixed}T${item["結束時間"]}`,
+      backgroundColor: getColorByName(item["課程名稱"]),
+      classNames: getClass(item),
+      extendedProps: item
+    };
+  });
+
+  // 銷毀前一個 calendar
+  if (calendar) calendar.destroy();
+
+  calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+    initialView: 'dayGridMonth',
+    locale: 'zh-tw',
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,listWeek'
+    },
+    events,
+    eventDidMount: function(info) {
+      const p = info.event.extendedProps;
+      const tooltip = 
+        `課程：${getCourseLabel(p)}\n` +
+        `教師：${p["教師"]}\n` +
+        `教室：${p["教室"]}\n` +
+        `堂數：${p["當前堂數"]}/${p["總堂數"]}\n` +
+        `備註：${p["備註"] || ""}`;
+      info.el.title = tooltip;
+    },
+    eventOrder: "title,start", // 依照標題（年級科目）排序
+    eventMaxStack: 4, // 一天最多顯示幾筆，否則加顯示「+X more」
+    nowIndicator: true,
+    slotLabelFormat: {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }
+  });
+
+  calendar.render();
+}
+
+function getColorByName(name) {
+  const colors = ['#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A','#9370DB','#FF8C00','#20B2AA'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
+  return colors[hash % colors.length];
+}
+
+function getClass(item) {
+  const result = [];
+  if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
+  return result;
+}
 </script>
 
 </body>
