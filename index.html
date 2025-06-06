@@ -26,7 +26,6 @@
       font-weight: bold;
       font-size: 1.06em;
     }
-    /* 文字表格區 */
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
     #list-container th, #list-container td {
@@ -61,7 +60,6 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 排序用
 function courseSortKey(courseName) {
   const match = courseName.match(/^([一二三])[上下]/);
   let n = 0;
@@ -105,7 +103,6 @@ function getCourseLabel(item) {
 }
 
 function getColorByName(name) {
-  // 你可再擴充配色
   const colors = [
     '#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A',
     '#9370DB','#FF8C00','#20B2AA','#E9967A','#48D1CC',
@@ -116,7 +113,6 @@ function getColorByName(name) {
   return colors[hash % colors.length];
 }
 
-// ★ 自動判斷字色：背景深→白字，背景淺→深字
 function getTextColor(bgColor) {
   let r = 0, g = 0, b = 0;
   if (bgColor.length === 7) {
@@ -182,7 +178,6 @@ function renderCalendar(data) {
   calendar.render();
 }
 
-// 列出所有課程（跨月）
 function renderList(data) {
   const sorted = [...data].sort((a, b) => {
     let da = a["日期"], db = b["日期"];
