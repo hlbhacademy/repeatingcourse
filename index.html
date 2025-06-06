@@ -21,10 +21,26 @@
     }
     #calendar { max-width: 1100px; margin: auto; }
     .fc-daygrid-event-dot { display: none; }
-    .fc-daygrid-event .fc-event-title {
-      white-space: pre-line;
+    .fc-daygrid-event .fc-event-title,
+    .fc-timegrid-event .fc-event-title {
+      white-space: pre-line !important;
       font-weight: bold;
       font-size: 1.06em;
+      word-break: break-all;
+    }
+    /* 週檢視顯示完整內容且字一定黑色 */
+    .fc-timegrid-event, .fc-timegrid-event .fc-event-title {
+      color: #222 !important;
+      min-height: 50px !important;
+      height: auto !important;
+      white-space: pre-line !important;
+      overflow: visible !important;
+    }
+    /* 事件狀態icon */
+    .course-icon {
+      font-size: 1.3em;
+      margin-right: 2px;
+      vertical-align: middle;
     }
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
@@ -40,9 +56,8 @@
       #calendar, #list-container { width: 100%; font-size: 0.96em;}
       #filter-bar { font-size: 1.1em;}
     }
-    /* 事件視圖都繼承JS設置字色 */
     .fc-event, .fc-event-title, .fc-timegrid-event .fc-event-title, .fc-daygrid-event .fc-event-title {
-      color: inherit !important;
+      color: #222 !important;
     }
   </style>
 </head>
@@ -75,7 +90,6 @@ document.addEventListener('DOMContentLoaded', async function () {
   const data = await res.json();
   allData = data;
 
-  // 取所有課程名稱，排序後做下拉
   const courses = [...new Set(data.map(item => getCourseLabel(item)))].sort((a, b) => {
     return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
   });
@@ -115,24 +129,20 @@ function getColorByName(name) {
 
 // 狀態icon/顏色：回傳 {icon, color}
 function getCourseStatus(courseName, eventDate, allData) {
-  // 收集這個課程所有場次
   const allEvents = allData.filter(x => getCourseLabel(x) === courseName)
     .sort((a, b) => new Date(a["日期"]) - new Date(b["日期"]));
   const total = parseInt(allEvents[0]["總堂數"] || allEvents.length);
-  // 計算已經上的堂數（以今日為準）
   const today = new Date();
   const eventDay = new Date(eventDate);
-  // 最後一天
   const lastDay = new Date(allEvents[allEvents.length - 1]["日期"]);
-  // 到目前為止的事件
   const finishedCount = allEvents.filter(e => new Date(e["日期"]) < today).length;
   if (today > lastDay) {
-    return { icon: "🔴", color: "#e74c3c", label: "已結束" }; // 已結束
+    return { icon: "🔴", color: "#e74c3c", label: "已結束" };
   }
   if (finishedCount < total / 3) {
-    return { icon: "🟢", color: "#27ae60", label: "剛開始" }; // 進行中未達1/3
+    return { icon: "🟢", color: "#27ae60", label: "剛開始" };
   } else {
-    return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" }; // 進行中已達1/3
+    return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" };
   }
 }
 
@@ -148,18 +158,16 @@ function renderCalendar(data) {
     const startTime = item["起始時間"]?.slice(0,5);
     const endTime = item["結束時間"]?.slice(0,5);
     const course = getCourseLabel(item);
-
     const status = getCourseStatus(course, date, allData);
-
     const bgColor = getColorByName(item["課程名稱"]);
-    // icon放最前面，title靠右
-    const title = `${status.icon} ${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
+    // icon單獨給，不放進title
+    const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
     return {
       title: title,
       start: `${dateFixed}T${item["起始時間"]}`,
       end: `${dateFixed}T${item["結束時間"]}`,
       classNames: getClass(item),
-      extendedProps: { ...item, bg: bgColor, statusColor: status.color, statusLabel: status.label }
+      extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label }
     };
   });
 
@@ -173,6 +181,8 @@ function renderCalendar(data) {
       center: 'title',
       right: 'dayGridMonth,timeGridWeek,listWeek'
     },
+    slotMinTime: '07:00:00', // 最早顯示
+    slotMaxTime: '20:00:00', // 最晚顯示
     events,
     eventOrder: "title,start",
     dayMaxEvents: false,
@@ -181,13 +191,26 @@ function renderCalendar(data) {
     slotEventOverlap: false,
     eventMaxStack: 99,
     eventDidMount: function(info) {
-      // icon不著色（emoji），背景色為課程色，字黑色
+      // icon插入在事件最前面
+      let iconNode = document.createElement("span");
+      iconNode.className = "course-icon";
+      iconNode.innerText = info.event.extendedProps.statusIcon;
+      // 找到事件標題
+      let titleNode = info.el.querySelector(".fc-event-title");
+      if (titleNode && !titleNode.querySelector('.course-icon')) {
+        titleNode.prepend(iconNode);
+      }
+      // 背景和字色
       info.el.style.backgroundColor = info.event.extendedProps.bg;
       info.el.style.color = "#222";
       info.el.style.setProperty('color', '#222', 'important');
+      info.el.style.fontWeight = "bold";
       info.el.style.borderRadius = "7px";
       info.el.style.border = "none";
-      info.el.title = info.event.extendedProps.statusLabel; // hover顯示狀態
+      info.el.title = info.event.extendedProps.statusLabel;
+      // 讓週檢視自動撐開事件高度
+      info.el.style.height = "auto";
+      titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
   });
 
