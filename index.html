@@ -59,7 +59,7 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 1. 標準化格式
+// 格式標準化
 function fixDate(dateStr) {
   if (!dateStr) return "";
   if (dateStr.startsWith("1899") || dateStr.startsWith("Invalid")) return "";
@@ -120,52 +120,6 @@ function getCourseStatus(courseName, eventDate, allData) {
     return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" };
   }
 }
-
-// 2. 只要異動日期欄有值，就隱藏原本的那筆（同課程、同老師、同堂次/原日期），只保留異動後一筆。
-//    只異動教室/時間則強調該欄紅色，其餘內容不變。
-function mergeWithChanges(data) {
-  // key: 課程+教師+堂次
-  function makeKey(item, useChangeDate=false) {
-    const course = getCourseLabel(item);
-    const teacher = item["教師"]||"";
-    const idx = item["當前堂數"]||"";
-    const date = fixDate(useChangeDate && item["異動日期"] ? item["異動日期"] : item["日期"]);
-    return [course, teacher, idx, date].join("|");
-  }
-  // 找出異動日期的key，記住被取代的原key
-  const overrideKeys = new Set();
-  const changeKeyToRow = {};
-  data.forEach(item => {
-    if (item["異動日期"]) {
-      const oriKey = makeKey(item, false); // 原本key
-      overrideKeys.add(oriKey);
-      const newKey = makeKey(item, true); // 新key
-      changeKeyToRow[newKey] = item;
-    }
-  });
-  // 依序產生結果，只要是異動日期那筆，用新key/資料取代；只異動教室/時間用原key但強調紅色
-  const output = [];
-  const addedKeys = new Set();
-  data.forEach(item => {
-    // 優先處理異動日期後的新資料
-    if (item["異動日期"]) {
-      const newKey = makeKey(item, true);
-      if (!addedKeys.has(newKey)) {
-        output.push(item);
-        addedKeys.add(newKey);
-      }
-      // 原key不加
-    } else {
-      const oriKey = makeKey(item, false);
-      if (!overrideKeys.has(oriKey) && !addedKeys.has(oriKey)) {
-        output.push(item);
-        addedKeys.add(oriKey);
-      }
-    }
-  });
-  return output;
-}
-
 // 只要異動該欄位才紅字強調
 function fieldClass(item, field) {
   if (field === '日期')    return item["異動日期"]    ? "highlight-red" : "";
@@ -179,6 +133,38 @@ function getClass(item) {
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
   return result;
 }
+// 重新計算堂次
+function mergeAndRenumber(data) {
+  // 以課程名稱+教師為分組
+  const groups = {};
+  data.forEach(item => {
+    const key = getCourseLabel(item) + '|' + (item["教師"]||"");
+    if (!groups[key]) groups[key] = [];
+    // 決定顯示日期
+    const date = fixDate(item["異動日期"] || item["日期"]);
+    groups[key].push({ ...item, __displayDate: date });
+  });
+  // 每組內依日期排序，並重新標記堂次
+  const allRows = [];
+  Object.values(groups).forEach(group => {
+    group.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
+    // 排除「異動日期」會覆蓋原日期的資料
+    const replaced = new Set();
+    group.forEach(item => {
+      if (item["異動日期"]) replaced.add(fixDate(item["日期"]));
+    });
+    const filtered = group.filter(item => !replaced.has(item.__displayDate) || item["異動日期"]);
+    // 重新賦予堂次
+    const total = filtered.length;
+    filtered.forEach((item, idx) => {
+      item.__showIdx = idx+1;
+      item.__showTotal = total;
+      allRows.push(item);
+    });
+  });
+  // 依日期全排序
+  return allRows.sort((a,b) => a.__displayDate.localeCompare(b.__displayDate));
+}
 let allData = [];
 let calendar = null;
 document.addEventListener('DOMContentLoaded', async function () {
@@ -186,8 +172,8 @@ document.addEventListener('DOMContentLoaded', async function () {
   const data = await res.json();
   allData = data;
 
-  // 合併異動資料後
-  const merged = mergeWithChanges(data);
+  // 堂次自動重排
+  const merged = mergeAndRenumber(data);
 
   const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => {
     return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
@@ -213,14 +199,13 @@ document.addEventListener('DOMContentLoaded', async function () {
 
 function renderCalendar(data) {
   const events = data.map(item => {
-    const date = fixDate(item["異動日期"] || item["日期"]);
+    const date = item.__displayDate;
     const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
     const bgColor = getColorByName(item["課程名稱"]);
     const classroom = item["異動教室"] || item["教室"] || "";
-    // 強調該異動欄紅字
     let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
     return {
       title: title,
@@ -263,16 +248,13 @@ function renderCalendar(data) {
       info.el.style.border = "none";
       info.el.title = info.event.extendedProps.statusLabel;
       info.el.style.height = "auto";
-      // 針對需要紅字欄位加強
-      // 教室
+      // 紅字強調
       if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"]) {
         titleNode.innerHTML = titleNode.innerHTML.replace(
           info.event.extendedProps["異動教室"],
           `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
         );
       }
-      // 日期不在titleNode（在日曆格上），不特別標紅
-      // 時間
       if (info.event.extendedProps["異動起始時間"]) {
         titleNode.innerHTML = titleNode.innerHTML.replace(
           info.event.extendedProps["異動起始時間"],
@@ -292,11 +274,6 @@ function renderCalendar(data) {
 }
 
 function renderList(data) {
-  const sorted = [...data].sort((a, b) => {
-    let da = fixDate(a["異動日期"] || a["日期"]);
-    let db = fixDate(b["異動日期"] || b["日期"]);
-    return da > db ? 1 : da < db ? -1 : 0;
-  });
   let html = `<table>
   <tr>
     <th>狀態</th>
@@ -308,15 +285,14 @@ function renderList(data) {
     <th>堂次</th>
     <th>備註</th>
   </tr>`;
-  for (let item of sorted) {
-    const date = fixDate(item["異動日期"] || item["日期"]);
+  for (let item of data) {
+    const date = item.__displayDate;
     const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const classroom = item["異動教室"] || item["教室"] || "";
     const course = getCourseLabel(item);
-    const status = getCourseStatus(course, date, data);
     html += `<tr>
-      <td style="font-size:1.3em;">${status.icon}</td>
+      <td style="font-size:1.3em;">🟡</td>
       <td class="${fieldClass(item, "日期")}">${date}</td>
       <td>
         <span class="${fieldClass(item, "起始時間")}">${startTime}</span>
@@ -326,7 +302,7 @@ function renderList(data) {
       <td>${course}</td>
       <td>${item["教師"]||""}</td>
       <td class="${fieldClass(item, "教室")}">${classroom}</td>
-      <td>${item["當前堂數"]||""}/${item["總堂數"]||""}</td>
+      <td>${item.__showIdx}/${item.__showTotal}</td>
       <td>${item["備註"]||""}</td>
     </tr>`;
   }
