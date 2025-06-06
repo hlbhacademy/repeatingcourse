@@ -59,7 +59,7 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 格式標準化
+// 標準化日期格式
 function fixDate(dateStr) {
   if (!dateStr) return "";
   if (dateStr.startsWith("1899") || dateStr.startsWith("Invalid")) return "";
@@ -133,7 +133,8 @@ function getClass(item) {
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
   return result;
 }
-// 重新計算堂次
+
+// **真正修正版**：合併異動日期，原日期只要有異動就消失
 function mergeAndRenumber(data) {
   // 以課程名稱+教師為分組
   const groups = {};
@@ -141,22 +142,41 @@ function mergeAndRenumber(data) {
     const key = getCourseLabel(item) + '|' + (item["教師"]||"");
     if (!groups[key]) groups[key] = [];
     // 決定顯示日期
-    const date = fixDate(item["異動日期"] || item["日期"]);
-    groups[key].push({ ...item, __displayDate: date });
+    groups[key].push(item);
   });
-  // 每組內依日期排序，並重新標記堂次
+
   const allRows = [];
   Object.values(groups).forEach(group => {
-    group.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-    // 排除「異動日期」會覆蓋原日期的資料
-    const replaced = new Set();
+    // 先找到所有有異動日期的原始日期
+    const replacedDateSet = new Set();
     group.forEach(item => {
-      if (item["異動日期"]) replaced.add(fixDate(item["日期"]));
+      if (item["異動日期"]) {
+        replacedDateSet.add(fixDate(item["日期"]));
+      }
     });
-    const filtered = group.filter(item => !replaced.has(item.__displayDate) || item["異動日期"]);
-    // 重新賦予堂次
-    const total = filtered.length;
-    filtered.forEach((item, idx) => {
+    // 保留規則：
+    // (1) 有異動日期的，只顯示異動後那筆
+    // (2) 其他的，若其「原始日期」沒被異動取代，則保留
+    let processed = [];
+    group.forEach(item => {
+      if (item["異動日期"]) {
+        // 只保留異動後那筆（用異動日期當__displayDate）
+        let clone = { ...item };
+        clone.__displayDate = fixDate(item["異動日期"]);
+        processed.push(clone);
+      } else {
+        const thisDate = fixDate(item["日期"]);
+        if (!replacedDateSet.has(thisDate)) {
+          let clone = { ...item };
+          clone.__displayDate = thisDate;
+          processed.push(clone);
+        }
+      }
+    });
+    // 按__displayDate排序，重編堂次
+    processed.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
+    const total = processed.length;
+    processed.forEach((item, idx) => {
       item.__showIdx = idx+1;
       item.__showTotal = total;
       allRows.push(item);
