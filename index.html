@@ -59,7 +59,7 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 標準化格式
+// 1. 標準化格式
 function fixDate(dateStr) {
   if (!dateStr) return "";
   if (dateStr.startsWith("1899") || dateStr.startsWith("Invalid")) return "";
@@ -121,89 +121,50 @@ function getCourseStatus(courseName, eventDate, allData) {
   }
 }
 
-// 決定該筆是否為異動筆：只有異動日期才是新事件，其他異動只強調欄位不移動主鍵
-function isRealChangedRow(item) {
-  return item["異動日期"];
-}
-
-// 將所有原始資料合成（僅有異動日期才移除原事件，其他異動僅強調顏色）
-function getMergedData(data) {
-  // 先建立 key
-  // key = 課程名稱 + 教師 + 原日期 or 異動日期
-  const dataMap = {};
-  data.forEach(item => {
-    // 優先異動日期，否則用原日期
-    const date = fixDate(item["異動日期"] || item["日期"]);
-    const key = [
-      getCourseLabel(item),
-      item["教師"]||"",
-      date
-    ].join("|");
-    // 只存最新異動的資料，否則原始
-    // 若該日期有異動資料，就存異動
-    if (item["異動日期"]) {
-      dataMap[key] = {
-        ...item,
-        __isDateChanged: true // 標註此筆異動日期
-      };
-    } else if (!dataMap[key]) {
-      dataMap[key] = {
-        ...item,
-        __isDateChanged: false
-      };
-    }
-  });
-  // 過濾掉所有異動日期來源的舊資料
-  // 若有一筆異動日期為X，則同課程+教師+原本日期那筆要排除
-  const excludedKeys = new Set();
+// 2. 只要異動日期欄有值，就隱藏原本的那筆（同課程、同老師、同堂次/原日期），只保留異動後一筆。
+//    只異動教室/時間則強調該欄紅色，其餘內容不變。
+function mergeWithChanges(data) {
+  // key: 課程+教師+堂次
+  function makeKey(item, useChangeDate=false) {
+    const course = getCourseLabel(item);
+    const teacher = item["教師"]||"";
+    const idx = item["當前堂數"]||"";
+    const date = fixDate(useChangeDate && item["異動日期"] ? item["異動日期"] : item["日期"]);
+    return [course, teacher, idx, date].join("|");
+  }
+  // 找出異動日期的key，記住被取代的原key
+  const overrideKeys = new Set();
+  const changeKeyToRow = {};
   data.forEach(item => {
     if (item["異動日期"]) {
-      const oriKey = [
-        getCourseLabel(item),
-        item["教師"]||"",
-        fixDate(item["日期"])
-      ].join("|");
-      excludedKeys.add(oriKey);
+      const oriKey = makeKey(item, false); // 原本key
+      overrideKeys.add(oriKey);
+      const newKey = makeKey(item, true); // 新key
+      changeKeyToRow[newKey] = item;
     }
   });
-  // 產生最終顯示清單
-  return Object.entries(dataMap)
-    .filter(([key, row]) => !excludedKeys.has(key) || row.__isDateChanged)
-    .map(([key, row]) => row);
+  // 依序產生結果，只要是異動日期那筆，用新key/資料取代；只異動教室/時間用原key但強調紅色
+  const output = [];
+  const addedKeys = new Set();
+  data.forEach(item => {
+    // 優先處理異動日期後的新資料
+    if (item["異動日期"]) {
+      const newKey = makeKey(item, true);
+      if (!addedKeys.has(newKey)) {
+        output.push(item);
+        addedKeys.add(newKey);
+      }
+      // 原key不加
+    } else {
+      const oriKey = makeKey(item, false);
+      if (!overrideKeys.has(oriKey) && !addedKeys.has(oriKey)) {
+        output.push(item);
+        addedKeys.add(oriKey);
+      }
+    }
+  });
+  return output;
 }
-
-let allData = [];
-let calendar = null;
-
-document.addEventListener('DOMContentLoaded', async function () {
-  const res = await fetch(apiUrl);
-  const data = await res.json();
-  allData = data;
-
-  // 真正合併後只保留要顯示的資料
-  const mergedData = getMergedData(data);
-
-  const courses = [...new Set(mergedData.map(item => getCourseLabel(item)))].sort((a, b) => {
-    return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
-  });
-  const select = document.getElementById('courseSelect');
-  courses.forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c;
-    opt.textContent = c;
-    select.appendChild(opt);
-  });
-
-  renderCalendar(mergedData);
-  renderList(mergedData);
-
-  select.addEventListener('change', function () {
-    const value = this.value;
-    const filtered = (!value) ? mergedData : mergedData.filter(item => getCourseLabel(item) === value);
-    renderCalendar(filtered);
-    renderList(filtered);
-  });
-});
 
 // 只要異動該欄位才紅字強調
 function fieldClass(item, field) {
@@ -218,6 +179,38 @@ function getClass(item) {
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
   return result;
 }
+let allData = [];
+let calendar = null;
+document.addEventListener('DOMContentLoaded', async function () {
+  const res = await fetch(apiUrl);
+  const data = await res.json();
+  allData = data;
+
+  // 合併異動資料後
+  const merged = mergeWithChanges(data);
+
+  const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => {
+    return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
+  });
+  const select = document.getElementById('courseSelect');
+  courses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    select.appendChild(opt);
+  });
+
+  renderCalendar(merged);
+  renderList(merged);
+
+  select.addEventListener('change', function () {
+    const value = this.value;
+    const filtered = (!value) ? merged : merged.filter(item => getCourseLabel(item) === value);
+    renderCalendar(filtered);
+    renderList(filtered);
+  });
+});
+
 function renderCalendar(data) {
   const events = data.map(item => {
     const date = fixDate(item["異動日期"] || item["日期"]);
@@ -228,12 +221,7 @@ function renderCalendar(data) {
     const bgColor = getColorByName(item["課程名稱"]);
     const classroom = item["異動教室"] || item["教室"] || "";
     // 強調該異動欄紅字
-    let courseDisplay = `<span>${course}</span>`;
-    let classroomDisplay = `<span class="${fieldClass(item, "教室")}">${classroom}</span>`;
-    let dateDisplay = `<span class="${fieldClass(item, "日期")}">${date}</span>`;
-    let timeDisplay = `<span class="${fieldClass(item, "起始時間")}">${startTime}</span>-<span class="${fieldClass(item, "結束時間")}">${endTime}</span>`;
-    // 日曆事件內容
-    const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
+    let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
     return {
       title: title,
       start: `${date}T${startTime}`,
@@ -276,31 +264,33 @@ function renderCalendar(data) {
       info.el.title = info.event.extendedProps.statusLabel;
       info.el.style.height = "auto";
       // 針對需要紅字欄位加強
-      // 課名
-      if (info.event.extendedProps["異動日期"] || info.event.extendedProps["異動起始時間"] || info.event.extendedProps["異動結束時間"] || info.event.extendedProps["異動教室"]) {
-        if (titleNode) {
-          let html = titleNode.innerHTML;
-          if (info.event.extendedProps["異動教室"]) {
-            html = html.replace(info.event.extendedProps["classroom"], `<span class="highlight-red">${info.event.extendedProps["classroom"]}</span>`);
-          }
-          if (info.event.extendedProps["異動日期"]) {
-            html = html.replace(info.event.extendedProps["日期"], `<span class="highlight-red">${info.event.extendedProps["異動日期"]}</span>`);
-          }
-          if (info.event.extendedProps["異動起始時間"]) {
-            html = html.replace(info.event.extendedProps["起始時間"], `<span class="highlight-red">${info.event.extendedProps["異動起始時間"]}</span>`);
-          }
-          if (info.event.extendedProps["異動結束時間"]) {
-            html = html.replace(info.event.extendedProps["結束時間"], `<span class="highlight-red">${info.event.extendedProps["異動結束時間"]}</span>`);
-          }
-          // 預防沒修正到的還是用預設色
-          titleNode.innerHTML = html;
-        }
+      // 教室
+      if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"]) {
+        titleNode.innerHTML = titleNode.innerHTML.replace(
+          info.event.extendedProps["異動教室"],
+          `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
+        );
+      }
+      // 日期不在titleNode（在日曆格上），不特別標紅
+      // 時間
+      if (info.event.extendedProps["異動起始時間"]) {
+        titleNode.innerHTML = titleNode.innerHTML.replace(
+          info.event.extendedProps["異動起始時間"],
+          `<span class="highlight-red">${info.event.extendedProps["異動起始時間"]}</span>`
+        );
+      }
+      if (info.event.extendedProps["異動結束時間"]) {
+        titleNode.innerHTML = titleNode.innerHTML.replace(
+          info.event.extendedProps["異動結束時間"],
+          `<span class="highlight-red">${info.event.extendedProps["異動結束時間"]}</span>`
+        );
       }
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
   });
   calendar.render();
 }
+
 function renderList(data) {
   const sorted = [...data].sort((a, b) => {
     let da = fixDate(a["異動日期"] || a["日期"]);
