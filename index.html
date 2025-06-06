@@ -18,64 +18,65 @@
   <h2>📅 113-2 重補修課程查詢日曆</h2>
   <div id="calendar"></div>
 
-  <script>
-    const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
+<script>
+  const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-    document.addEventListener('DOMContentLoaded', async function () {
-      const res = await fetch(apiUrl);
-      const data = await res.json();
+  document.addEventListener('DOMContentLoaded', async function () {
+    const res = await fetch(apiUrl);
+    const data = await res.json();
 
-const events = data.map(item => {
-  // 保險處理「日期」帶 T（例如 2025-04-10T00:00:00.000Z）時只取前半部
-  let date = item["日期"];
-  if (typeof date === "string" && date.includes("T")) {
-    date = date.split("T")[0];
-  }
-  const start = `${date}T${item["起始時間"]}`;
-  const end = `${date}T${item["結束時間"]}`;
-  const color = getColorByName(item["課程名稱"]);
-  return {
-    title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
-    start,
-    end,
-    backgroundColor: color,
-    classNames: getClass(item),
-    extendedProps: item
-  };
-});
-
-
-      const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-        initialView: 'dayGridMonth',
-        locale: 'zh-tw',
-        headerToolbar: {
-          left: 'prev,next today',
-          center: 'title',
-          right: 'dayGridMonth,timeGridWeek,listWeek'
-        },
-        events,
-        eventDidMount: function(info) {
-          const p = info.event.extendedProps;
-          const tooltip = `教師：${p["教師"]}\n教室：${p["教室"]}\n堂數：${p["當前堂數"]}/${p["總堂數"]}\n備註：${p["備註"]}`;
-          info.el.title = tooltip;
-        }
-      });
-
-      calendar.render();
+    const events = data.map(item => {
+      let date = item["日期"];
+      if (typeof date === "string" && date.includes("T")) {
+        date = date.split("T")[0];
+      }
+      // ★ 這裡強制把「/」換成「-」才是 FullCalendar 可接受格式
+      date = date.replace(/\//g, "-");
+      const start = `${date}T${item["起始時間"]}`;
+      const end = `${date}T${item["結束時間"]}`;
+      const color = getColorByName(item["課程名稱"]);
+      return {
+        title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
+        start,
+        end,
+        backgroundColor: color,
+        classNames: getClass(item),
+        extendedProps: item
+      };
     });
 
-    function getColorByName(name) {
-      const colors = ['#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A','#9370DB','#FF8C00','#20B2AA'];
-      let hash = 0;
-      for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
-      return colors[hash % colors.length];
-    }
+    const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+      initialView: 'dayGridMonth',
+      locale: 'zh-tw',
+      headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek,listWeek'
+      },
+      events,
+      eventDidMount: function(info) {
+        const p = info.event.extendedProps;
+        const tooltip = `教師：${p["教師"]}\n教室：${p["教室"]}\n堂數：${p["當前堂數"]}/${p["總堂數"]}\n備註：${p["備註"]}`;
+        info.el.title = tooltip;
+      }
+    });
 
-    function getClass(item) {
-      const result = [];
-      if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
-      return result;
-    }
-  </script>
+    calendar.render();
+  });
+
+  function getColorByName(name) {
+    const colors = ['#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A','#9370DB','#FF8C00','#20B2AA'];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
+    return colors[hash % colors.length];
+  }
+
+  function getClass(item) {
+    const result = [];
+    if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
+    return result;
+  }
+</script>
+
 </body>
 </html>
