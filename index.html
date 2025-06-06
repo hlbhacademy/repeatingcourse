@@ -20,12 +20,16 @@
       font-size: 1.1em;
     }
     #calendar { max-width: 1100px; margin: auto; }
-    .fc-event-title { font-weight: bold; font-size: 1em; white-space: pre-line; }
-    .fc-event.critical { background-color: #ffdddd !important; }
-    .fc-event.changed { border: 2px solid red !important; }
     /* 月檢視事件顯示完整課程名稱不省略 */
     .fc-daygrid-event-dot { display: none; }
-    .fc-daygrid-event .fc-event-title { white-space: pre-line; font-weight: bold; font-size: 1em;}
+    .fc-daygrid-event .fc-event-title {
+      white-space: pre-line;
+      font-weight: bold;
+      font-size: 1.06em;
+      color: #172766;
+    }
+    .fc-event.critical { background-color: #ffdddd !important; }
+    .fc-event.changed { border: 2px solid red !important; }
     /* 文字表格區 */
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
@@ -112,6 +116,7 @@ function renderCalendar(data) {
     const startTime = item["起始時間"]?.slice(0,5);
     const endTime = item["結束時間"]?.slice(0,5);
     const course = getCourseLabel(item);
+    // 「課程名稱」加粗顏色，時間下方換行
     const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
     return {
       title: title,
