@@ -32,15 +32,18 @@
       vertical-align: middle;
     }
     .highlight-red { color: #C00000 !important; font-weight: bold !important;}
-    .disabled-bg { background: #888 !important; color: #fff !important; }
-    .disabled-txt { color: #fff !important; background: #888 !important; }
-    .disabled-tag { border-radius: 9px; padding: 0px 6px; background: #555; color: #fff; font-size: 0.8em; margin-left: 6px; }
+    .important-change {
+      border: 4px solid #c00 !important;
+      box-sizing: border-box !important;
+    }
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
     #list-container th, #list-container td {
-      border: 1px solid #aaa; padding: 0.5em; text-align: center; font-size: 1.08em;
+      border: 1.5px solid #aaa; padding: 0.5em; text-align: center; font-size: 1.08em;
     }
     #list-container th { background: #f4f4f4; font-size: 1.13em;}
+    .important-row { border: 2.5px solid #c00 !important; }
+    .important-cell { color: #C00000 !important; font-weight: bold !important; }
     @media (max-width: 800px) {
       #calendar, #list-container { width: 100%; font-size: 0.96em;}
       #filter-bar { font-size: 1.1em;}
@@ -85,7 +88,6 @@ function fixTime(t) {
     let h = m[1].padStart(2,"0");
     return `${h}:${m[2]}`;
   }
-  // 若有"上午"、"下午"等，也一律不顯示
   return "";
 }
 function courseSortKey(courseName) {
@@ -125,79 +127,16 @@ function getCourseStatus(courseName, eventDate, allData) {
   }
 }
 function fieldClass(item, field) {
-  if (field === '日期')    return item["異動日期"]    ? "highlight-red" : "";
-  if (field === '起始時間')return item["異動起始時間"]? "highlight-red" : "";
-  if (field === '結束時間') return item["異動結束時間"] ? "highlight-red" : "";
-  if (field === '教室')    return item["異動教室"]    ? "highlight-red" : "";
+  if (item["異動強調"] !== "是") return "";
+  // 只有「異動強調」時才判斷紅字
+  if (field === '日期' && item["異動日期"]) return "important-cell";
+  if (field === '教室' && item["異動教室"]) return "important-cell";
   return "";
 }
 function getClass(item) {
   const result = [];
-  if (item.__isDisabled) result.push("disabled-bg");
-  if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
+  if (item["異動強調"] === "是") result.push("important-change");
   return result;
-}
-
-// 只允許每組異動前「僅一筆灰底」且不重複
-function mergeAndRenumber(data) {
-  const mergedMap = {};
-  const disabledRows = {};
-  data.forEach(item => {
-    const key = [
-      getCourseLabel(item),
-      item["教師"]||"",
-      fixDate(item["日期"])
-    ].join('|');
-    if (item["異動日期"]) {
-      const newKey = [
-        getCourseLabel(item),
-        item["教師"]||"",
-        fixDate(item["異動日期"])
-      ].join('|');
-      mergedMap[newKey] = {
-        ...item,
-        __displayDate: fixDate(item["異動日期"]),
-        __isDisabled: false
-      };
-      // 灰底前僅一筆
-      if (!disabledRows[key]) {
-        disabledRows[key] = {
-          ...item,
-          __displayDate: fixDate(item["日期"]),
-          __isDisabled: true
-        };
-      }
-    } else if (!mergedMap[key]) {
-      mergedMap[key] = {
-        ...item,
-        __displayDate: fixDate(item["日期"]),
-        __isDisabled: false
-      };
-    }
-  });
-  // 合併，灰底僅一筆
-  const allRows = [
-    ...Object.values(mergedMap),
-    ...Object.values(disabledRows)
-  ];
-  allRows.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-  // 按課名/教師群組重編堂次
-  const groupMap = {};
-  allRows.forEach(item => {
-    const key = getCourseLabel(item) + "|" + (item["教師"]||"");
-    if (!groupMap[key]) groupMap[key] = [];
-    groupMap[key].push(item);
-  });
-  Object.values(groupMap).forEach(group => {
-    let idx = 1;
-    group.forEach(item => {
-      if (!item.__isDisabled) {
-        item.__showIdx = idx++;
-        item.__showTotal = group.filter(x=>!x.__isDisabled).length;
-      }
-    });
-  });
-  return allRows;
 }
 
 let allData = [];
@@ -207,9 +146,10 @@ document.addEventListener('DOMContentLoaded', async function () {
   const data = await res.json();
   allData = data;
 
-  const merged = mergeAndRenumber(data);
+  // 依據日期排序
+  const merged = [...data].filter(x=>x["日期"]).sort((a, b) => fixDate(a["日期"]).localeCompare(fixDate(b["日期"])));
 
-  const courses = [...new Set(merged.filter(x=>!x.__isDisabled).map(item => getCourseLabel(item)))].sort((a, b) => {
+  const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => {
     return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
   });
   const select = document.getElementById('courseSelect');
@@ -225,7 +165,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   select.addEventListener('change', function () {
     const value = this.value;
-    const filtered = (!value) ? merged : merged.filter(item => getCourseLabel(item) === value || (item.__isDisabled && getCourseLabel(item) === value));
+    const filtered = (!value) ? merged : merged.filter(item => getCourseLabel(item) === value);
     renderCalendar(filtered);
     renderList(filtered);
   });
@@ -233,21 +173,23 @@ document.addEventListener('DOMContentLoaded', async function () {
 
 function renderCalendar(data) {
   const events = data.map(item => {
-    const date = item.__displayDate;
+    const date = fixDate(item["日期"]);
     const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
-    const bgColor = item.__isDisabled ? "#888" : getColorByName(item["課程名稱"]);
-    const txtColor = item.__isDisabled ? "#fff" : "#222";
+    const bgColor = getColorByName(item["課程名稱"]);
     const classroom = item["異動教室"] || item["教室"] || "";
-    let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}${item.__isDisabled ? "\n【已異動】" : ""}`;
+    let title = `${course}\n${startTime} - ${endTime}`;
+    if (item["教師"]) title += ` ${item["教師"]}`;
+    if (classroom) title += `\n${item["異動強調"]==="是" && item["異動教室"] ? '<span class="highlight-red">'+classroom+'</span>' : classroom}`;
+    // 日期異動時，在title顯示紅字日期（只在表格欄有意義，日曆通常以格為主）
     return {
       title: title,
       start: `${date}T${startTime}`,
       end: `${date}T${endTime}`,
       classNames: getClass(item),
-      extendedProps: { ...item, bg: bgColor, fg: txtColor, statusIcon: status.icon, statusLabel: status.label, course, classroom, startTime, endTime }
+      extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label, course, classroom, startTime, endTime }
     };
   });
   if (calendar) calendar.destroy();
@@ -277,35 +219,18 @@ function renderCalendar(data) {
         titleNode.prepend(iconNode);
       }
       info.el.style.backgroundColor = info.event.extendedProps.bg;
-      info.el.style.color = info.event.extendedProps.fg;
+      info.el.title = info.event.extendedProps.statusLabel;
       info.el.style.fontWeight = "bold";
       info.el.style.borderRadius = "7px";
-      info.el.style.border = "none";
-      info.el.title = info.event.extendedProps.statusLabel;
-      info.el.style.height = "auto";
-      if (info.event.extendedProps.__isDisabled) {
-        info.el.style.backgroundColor = "#888";
-        info.el.style.color = "#fff";
-        if (titleNode) titleNode.style.color = "#fff";
-      }
-      // 紅字強調異動後
-      if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"] && !info.event.extendedProps.__isDisabled) {
-        titleNode.innerHTML = titleNode.innerHTML.replace(
-          info.event.extendedProps["異動教室"],
-          `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
-        );
-      }
-      if (info.event.extendedProps["異動起始時間"] && !info.event.extendedProps.__isDisabled) {
-        titleNode.innerHTML = titleNode.innerHTML.replace(
-          info.event.extendedProps["異動起始時間"],
-          `<span class="highlight-red">${info.event.extendedProps["異動起始時間"]}</span>`
-        );
-      }
-      if (info.event.extendedProps["異動結束時間"] && !info.event.extendedProps.__isDisabled) {
-        titleNode.innerHTML = titleNode.innerHTML.replace(
-          info.event.extendedProps["異動結束時間"],
-          `<span class="highlight-red">${info.event.extendedProps["異動結束時間"]}</span>`
-        );
+      info.el.style.border = info.event.classNames.includes("important-change") ? "4px solid #c00" : "none";
+      if (titleNode && info.event.extendedProps["異動強調"]==="是") {
+        // 教室異動紅字
+        if (info.event.extendedProps["異動教室"]) {
+          titleNode.innerHTML = titleNode.innerHTML.replace(
+            info.event.extendedProps["異動教室"],
+            `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
+          );
+        }
       }
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
@@ -325,28 +250,27 @@ function renderList(data) {
     <th>堂次</th>
     <th>備註</th>
   </tr>`;
+  let rownum = 0;
   for (let item of data) {
-    const date = item.__displayDate;
+    const date = fixDate(item["日期"]);
     const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const classroom = item["異動教室"] || item["教室"] || "";
     const course = getCourseLabel(item);
-    let rowClass = item.__isDisabled ? "disabled-bg" : "";
-    let cellClass = item.__isDisabled ? "disabled-txt" : "";
+    let rowClass = (item["異動強調"] === "是") ? "important-row" : "";
     html += `<tr class="${rowClass}">
       <td style="font-size:1.3em;">🟡</td>
-      <td class="${fieldClass(item, "日期")} ${cellClass}">${date}${item.__isDisabled ? '<span class="disabled-tag">已異動</span>' : ''}</td>
-      <td class="${cellClass}">
-        <span class="${fieldClass(item, "起始時間")}">${startTime}</span>
-        -
-        <span class="${fieldClass(item, "結束時間")}">${endTime}</span>
+      <td class="${fieldClass(item, "日期")}">${date}</td>
+      <td>
+        <span>${startTime}</span> - <span>${endTime}</span>
       </td>
-      <td class="${cellClass}">${course}</td>
-      <td class="${cellClass}">${item["教師"]||""}</td>
-      <td class="${fieldClass(item, "教室")} ${cellClass}">${classroom}</td>
-      <td class="${cellClass}">${item.__showIdx ? (item.__showIdx + '/' + item.__showTotal) : ''}</td>
-      <td class="${cellClass}">${item["備註"]||""}</td>
+      <td>${course}</td>
+      <td>${item["教師"]||""}</td>
+      <td class="${fieldClass(item, "教室")}">${classroom}</td>
+      <td>${item["當前堂數"]||""}${item["總堂數"]?("/"+item["總堂數"]):""}</td>
+      <td>${item["備註"]||""}</td>
     </tr>`;
+    rownum++;
   }
   html += `</table>`;
   document.getElementById('list-content').innerHTML = html;
@@ -354,4 +278,3 @@ function renderList(data) {
 </script>
 </body>
 </html>
-
