@@ -25,20 +25,25 @@
       const res = await fetch(apiUrl);
       const data = await res.json();
 
-      const events = data.map(item => {
-        const start = `${item["日期"]}T${item["起始時間"]}`;
-        const end = `${item["日期"]}T${item["結束時間"]}`;
-        const color = getColorByName(item["課程名稱"]);
+const events = data.map(item => {
+  // 保險處理「日期」帶 T（例如 2025-04-10T00:00:00.000Z）時只取前半部
+  let date = item["日期"];
+  if (typeof date === "string" && date.includes("T")) {
+    date = date.split("T")[0];
+  }
+  const start = `${date}T${item["起始時間"]}`;
+  const end = `${date}T${item["結束時間"]}`;
+  const color = getColorByName(item["課程名稱"]);
+  return {
+    title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
+    start,
+    end,
+    backgroundColor: color,
+    classNames: getClass(item),
+    extendedProps: item
+  };
+});
 
-        return {
-          title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
-          start,
-          end,
-          backgroundColor: color,
-          classNames: getClass(item),
-          extendedProps: item
-        };
-      });
 
       const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
         initialView: 'dayGridMonth',
