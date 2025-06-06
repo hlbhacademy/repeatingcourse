@@ -32,28 +32,18 @@
       vertical-align: middle;
     }
     .highlight-red { color: #C00000 !important; font-weight: bold !important;}
-    .muted-bg {
-      background: #888 !important;
-      color: #fff !important;
-    }
-    .muted-table {
-      background: #aaa !important;
-      color: #fff !important;
-    }
-    .muted-label {
-      color: #fff !important;
-      font-weight: bold;
-      background: #888 !important;
-      border-radius: 4px;
-      padding: 0 2px;
-      margin-left: 0.5em;
-    }
+    .disabled-bg { background: #aaa !important; color: #fff !important; }
+    .disabled-txt { color: #fff !important; background: #aaa !important; font-weight: bold !important;}
+    .disabled-label { font-size: 0.95em; color: #fff; background: #aaa; padding: 1px 6px; border-radius: 9px; margin-left: 3px;}
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
     #list-container th, #list-container td {
       border: 1px solid #aaa; padding: 0.5em; text-align: center; font-size: 1.08em;
     }
     #list-container th { background: #f4f4f4; font-size: 1.13em;}
+    .row-disabled { background: #aaa !important; color: #fff !important; }
+    .row-disabled a, .row-disabled span, .row-disabled td { color: #fff !important; }
+    .row-disabled .disabled-label { color: #fff; background: #C00000; }
     @media (max-width: 800px) {
       #calendar, #list-container { width: 100%; font-size: 0.96em;}
       #filter-bar { font-size: 1.1em;}
@@ -75,6 +65,7 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
+// 標準化日期格式
 function fixDate(dateStr) {
   if (!dateStr) return "";
   if (dateStr.startsWith("1899") || dateStr.startsWith("Invalid")) return "";
@@ -144,63 +135,59 @@ function fieldClass(item, field) {
 }
 function getClass(item) {
   const result = [];
+  if (item.__disabled) result.push("disabled-bg");
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
   return result;
 }
 
-// 修正版：合併異動資料，原日期保留但標註灰底白字【已異動】
+// 合併異動邏輯：只有異動「日期」的才會讓原課消失，異動教室/時間只是紅字
 function mergeAndRenumber(data) {
+  // 以課程名稱+教師分組
   const groups = {};
   data.forEach(item => {
     const key = getCourseLabel(item) + '|' + (item["教師"]||"");
     if (!groups[key]) groups[key] = [];
     groups[key].push(item);
   });
+
   const allRows = [];
   Object.values(groups).forEach(group => {
-    // 異動日期覆蓋的原始日期集合
+    // 找出被異動日期蓋掉的原始日期
     const replacedDateSet = new Set();
     group.forEach(item => {
       if (item["異動日期"]) {
         replacedDateSet.add(fixDate(item["日期"]));
       }
     });
+    // 保留規則：
+    // (1) 有異動日期，原日期要變__disabled，異動那天出現異動後那筆
+    // (2) 只有異動教室/時間，原日期仍保留，異動內容紅字
     let processed = [];
     group.forEach(item => {
+      const thisDate = fixDate(item["日期"]);
       if (item["異動日期"]) {
+        // 產生異動後那一筆
         let clone = { ...item };
         clone.__displayDate = fixDate(item["異動日期"]);
-        clone.__muted = false;
+        clone.__disabled = false;
         processed.push(clone);
+        // 原始那天也標記但不顯示（這裡決定不加入processed，讓原課消失）
       } else {
-        const thisDate = fixDate(item["日期"]);
-        if (replacedDateSet.has(thisDate)) {
-          // 原始被異動掉 → 淺灰底白字【已異動】
+        // 若不是被異動掉的日期，保留
+        if (!replacedDateSet.has(thisDate)) {
           let clone = { ...item };
           clone.__displayDate = thisDate;
-          clone.__muted = true;
-          processed.push(clone);
-        } else {
-          let clone = { ...item };
-          clone.__displayDate = thisDate;
-          clone.__muted = false;
+          clone.__disabled = false;
           processed.push(clone);
         }
       }
     });
-    // 按__displayDate排序，重編堂次
+    // 排序並重編堂次
     processed.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-    let n = 1;
-    processed.forEach(item => {
-      // 【被異動的舊資料不列入堂次計算】
-      if (!item.__muted) {
-        item.__showIdx = n++;
-      } else {
-        item.__showIdx = "-";
-      }
-    });
-    processed.forEach(item => {
-      item.__showTotal = n-1;
+    const total = processed.length;
+    processed.forEach((item, idx) => {
+      item.__showIdx = idx+1;
+      item.__showTotal = total;
       allRows.push(item);
     });
   });
@@ -213,6 +200,8 @@ document.addEventListener('DOMContentLoaded', async function () {
   const res = await fetch(apiUrl);
   const data = await res.json();
   allData = data;
+
+  // 堂次自動重排
   const merged = mergeAndRenumber(data);
 
   const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => {
@@ -244,16 +233,21 @@ function renderCalendar(data) {
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
-    const bgColor = item.__muted ? "#888" : getColorByName(item["課程名稱"]);
-    const fgColor = item.__muted ? "#fff" : "#222";
+    const bgColor = item.__disabled ? "#aaa" : getColorByName(item["課程名稱"]);
+    const fontColor = item.__disabled ? "#fff" : "#222";
     const classroom = item["異動教室"] || item["教室"] || "";
-    let title = `${course}${item.__muted ? "【已異動】" : ""}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
+    let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
+    if (item.__disabled) {
+      title = `【已異動】\n` + title;
+    }
     return {
       title: title,
       start: `${date}T${startTime}`,
       end: `${date}T${endTime}`,
-      classNames: [].concat(getClass(item)).concat(item.__muted ? ["muted-bg"] : []),
-      extendedProps: { ...item, bg: bgColor, fg: fgColor, statusIcon: status.icon, statusLabel: status.label, course, classroom, startTime, endTime }
+      classNames: [].concat(getClass(item)),
+      backgroundColor: bgColor,
+      textColor: fontColor,
+      extendedProps: { ...item, bg: bgColor, fontColor, statusIcon: status.icon, statusLabel: status.label, course, classroom, startTime, endTime }
     };
   });
   if (calendar) calendar.destroy();
@@ -283,17 +277,12 @@ function renderCalendar(data) {
         titleNode.prepend(iconNode);
       }
       info.el.style.backgroundColor = info.event.extendedProps.bg;
-      info.el.style.color = info.event.extendedProps.fg;
+      info.el.style.color = info.event.extendedProps.fontColor;
       info.el.style.fontWeight = "bold";
       info.el.style.borderRadius = "7px";
       info.el.style.border = "none";
       info.el.title = info.event.extendedProps.statusLabel;
       info.el.style.height = "auto";
-      if (info.event.extendedProps.__muted) {
-        info.el.classList.add("muted-bg");
-        info.el.style.backgroundColor = "#888";
-        info.el.style.color = "#fff";
-      }
       // 紅字強調
       if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"]) {
         titleNode.innerHTML = titleNode.innerHTML.replace(
@@ -312,6 +301,14 @@ function renderCalendar(data) {
           info.event.extendedProps["異動結束時間"],
           `<span class="highlight-red">${info.event.extendedProps["異動結束時間"]}</span>`
         );
+      }
+      // 被異動的課變白字、灰底、標註
+      if (info.event.extendedProps.__disabled) {
+        info.el.classList.add("disabled-bg");
+        titleNode.classList.add("disabled-txt");
+        if (!titleNode.innerHTML.includes("【已異動】")) {
+          titleNode.innerHTML = "【已異動】<br>" + titleNode.innerHTML;
+        }
       }
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
@@ -337,18 +334,18 @@ function renderList(data) {
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const classroom = item["異動教室"] || item["教室"] || "";
     const course = getCourseLabel(item);
-    let rowClass = item.__muted ? "muted-table" : "";
-    html += `<tr class="${rowClass}">
+    const isDisabled = item.__disabled;
+    html += `<tr${isDisabled ? ' class="row-disabled"' : ''}>
       <td style="font-size:1.3em;">🟡</td>
-      <td class="${fieldClass(item, "日期")}">${date}${item.__muted ? '<span class="muted-label">已異動</span>' : ""}</td>
+      <td${item["異動日期"] ? ' class="highlight-red"' : ''}>${date}${isDisabled ? '<span class="disabled-label">已異動</span>' : ''}</td>
       <td>
-        <span class="${fieldClass(item, "起始時間")}">${startTime}</span>
+        <span${item["異動起始時間"] ? ' class="highlight-red"' : ''}>${startTime}</span>
         -
-        <span class="${fieldClass(item, "結束時間")}">${endTime}</span>
+        <span${item["異動結束時間"] ? ' class="highlight-red"' : ''}>${endTime}</span>
       </td>
-      <td>${course}${item.__muted ? '<span class="muted-label">已異動</span>' : ""}</td>
+      <td${isDisabled ? ' class="disabled-txt"' : ''}>${course}</td>
       <td>${item["教師"]||""}</td>
-      <td class="${fieldClass(item, "教室")}">${classroom}</td>
+      <td${item["異動教室"] ? ' class="highlight-red"' : ''}>${classroom}</td>
       <td>${item.__showIdx}/${item.__showTotal}</td>
       <td>${item["備註"]||""}</td>
     </tr>`;
