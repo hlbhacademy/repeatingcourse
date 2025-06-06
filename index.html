@@ -85,6 +85,7 @@ function fixTime(t) {
     let h = m[1].padStart(2,"0");
     return `${h}:${m[2]}`;
   }
+  // 若有"上午"、"下午"等，也一律不顯示
   return "";
 }
 function courseSortKey(courseName) {
@@ -137,10 +138,10 @@ function getClass(item) {
   return result;
 }
 
-// 合併：如有異動，原本顯示灰底白字+註【已異動】，異動後正常顯示，避免重複時間
+// 只允許每組異動前「僅一筆灰底」且不重複
 function mergeAndRenumber(data) {
-  const records = {};
-  const disabled = [];
+  const mergedMap = {};
+  const disabledRows = {};
   data.forEach(item => {
     const key = [
       getCourseLabel(item),
@@ -148,45 +149,46 @@ function mergeAndRenumber(data) {
       fixDate(item["日期"])
     ].join('|');
     if (item["異動日期"]) {
-      // 異動後
       const newKey = [
         getCourseLabel(item),
         item["教師"]||"",
         fixDate(item["異動日期"])
       ].join('|');
-      records[newKey] = {
+      mergedMap[newKey] = {
         ...item,
         __displayDate: fixDate(item["異動日期"]),
         __isDisabled: false
       };
-      // 異動前
-      if (!records[key] || !records[key].__isDisabled) {
-        let clone = { ...item, __displayDate: fixDate(item["日期"]), __isDisabled: true };
-        disabled.push(clone);
-        records[key] = clone;
+      // 灰底前僅一筆
+      if (!disabledRows[key]) {
+        disabledRows[key] = {
+          ...item,
+          __displayDate: fixDate(item["日期"]),
+          __isDisabled: true
+        };
       }
-    } else {
-      records[key] = {
+    } else if (!mergedMap[key]) {
+      mergedMap[key] = {
         ...item,
         __displayDate: fixDate(item["日期"]),
         __isDisabled: false
       };
     }
   });
-  // 只保留每一課、每位教師、每一天「唯一一筆異動前灰底」
-  let allRows = Object.values(records).concat(disabled).filter(x=>x.__displayDate);
-  allRows = allRows.filter((row, idx, arr) => {
-    if (!row.__isDisabled) return true;
-    return arr.findIndex(x => x.__isDisabled && x.__displayDate===row.__displayDate && getCourseLabel(x)===getCourseLabel(row) && (x["教師"]||"") === (row["教師"]||"")) === idx;
-  });
+  // 合併，灰底僅一筆
+  const allRows = [
+    ...Object.values(mergedMap),
+    ...Object.values(disabledRows)
+  ];
   allRows.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-  const courseGroup = {};
+  // 按課名/教師群組重編堂次
+  const groupMap = {};
   allRows.forEach(item => {
-    const groupKey = getCourseLabel(item) + "|" + (item["教師"]||"");
-    if (!courseGroup[groupKey]) courseGroup[groupKey] = [];
-    courseGroup[groupKey].push(item);
+    const key = getCourseLabel(item) + "|" + (item["教師"]||"");
+    if (!groupMap[key]) groupMap[key] = [];
+    groupMap[key].push(item);
   });
-  Object.values(courseGroup).forEach(group => {
+  Object.values(groupMap).forEach(group => {
     let idx = 1;
     group.forEach(item => {
       if (!item.__isDisabled) {
@@ -286,7 +288,7 @@ function renderCalendar(data) {
         info.el.style.color = "#fff";
         if (titleNode) titleNode.style.color = "#fff";
       }
-      // 異動後紅字
+      // 紅字強調異動後
       if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"] && !info.event.extendedProps.__isDisabled) {
         titleNode.innerHTML = titleNode.innerHTML.replace(
           info.event.extendedProps["異動教室"],
@@ -352,3 +354,4 @@ function renderList(data) {
 </script>
 </body>
 </html>
+
