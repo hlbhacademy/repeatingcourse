@@ -134,57 +134,55 @@ function getClass(item) {
   return result;
 }
 
-// **真正修正版**：合併異動日期，原日期只要有異動就消失
+// ★★★ 修正版合併異動，只留最新異動（原本日期一定消失） ★★★
 function mergeAndRenumber(data) {
-  // 以課程名稱+教師為分組
+  // 以課程名稱+教師分組
   const groups = {};
   data.forEach(item => {
     const key = getCourseLabel(item) + '|' + (item["教師"]||"");
     if (!groups[key]) groups[key] = [];
-    // 決定顯示日期
     groups[key].push(item);
   });
 
   const allRows = [];
   Object.values(groups).forEach(group => {
-    // 先找到所有有異動日期的原始日期
-    const replacedDateSet = new Set();
+    // 1. 建立「原始日期被異動」的 map，記錄原始日期→最新異動後的資料
+    const replacedMap = new Map(); // 原始日期 -> 異動資料
     group.forEach(item => {
       if (item["異動日期"]) {
-        replacedDateSet.add(fixDate(item["日期"]));
+        const originDate = fixDate(item["日期"]);
+        const targetDate = fixDate(item["異動日期"]);
+        // 原始那天消失，顯示異動後那天
+        replacedMap.set(originDate, null);  // 標記原始被覆蓋
+        replacedMap.set(targetDate, { ...item, __displayDate: targetDate }); // 只留異動後那天
       }
     });
-    // 保留規則：
-    // (1) 有異動日期的，只顯示異動後那筆
-    // (2) 其他的，若其「原始日期」沒被異動取代，則保留
-    let processed = [];
+
+    // 2. 沒有異動的原始資料加入（被異動掉的就跳過）
     group.forEach(item => {
-      if (item["異動日期"]) {
-        // 只保留異動後那筆（用異動日期當__displayDate）
-        let clone = { ...item };
-        clone.__displayDate = fixDate(item["異動日期"]);
-        processed.push(clone);
-      } else {
-        const thisDate = fixDate(item["日期"]);
-        if (!replacedDateSet.has(thisDate)) {
-          let clone = { ...item };
-          clone.__displayDate = thisDate;
-          processed.push(clone);
+      if (!item["異動日期"]) {
+        const date = fixDate(item["日期"]);
+        if (!replacedMap.has(date)) {
+          replacedMap.set(date, { ...item, __displayDate: date });
         }
       }
     });
-    // 按__displayDate排序，重編堂次
-    processed.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-    const total = processed.length;
-    processed.forEach((item, idx) => {
-      item.__showIdx = idx+1;
+
+    // 3. 收集所有剩下的（不為null），按__displayDate排序、堂次重排
+    const filtered = [];
+    replacedMap.forEach(v => { if (v) filtered.push(v); });
+    filtered.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
+    const total = filtered.length;
+    filtered.forEach((item, idx) => {
+      item.__showIdx = idx + 1;
       item.__showTotal = total;
       allRows.push(item);
     });
   });
-  // 依日期全排序
-  return allRows.sort((a,b) => a.__displayDate.localeCompare(b.__displayDate));
+  // 全部依日期排序
+  return allRows.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
 }
+
 let allData = [];
 let calendar = null;
 document.addEventListener('DOMContentLoaded', async function () {
