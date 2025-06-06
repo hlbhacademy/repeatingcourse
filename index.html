@@ -78,15 +78,13 @@ function fixDate(dateStr) {
   return dateStr;
 }
 function fixTime(t) {
-  // 移除"下午5:10"等文字，只保留 HH:mm 格式
+  // 只保留 HH:mm 格式
   if (!t) return "";
   let m = t.match(/^(\d{1,2}):(\d{2})/);
   if (m) {
     let h = m[1].padStart(2,"0");
     return `${h}:${m[2]}`;
   }
-  if (t.startsWith("1899") || t.startsWith("Invalid")) return "";
-  // 若有"上午"、"下午"等，也一律不顯示
   return "";
 }
 function courseSortKey(courseName) {
@@ -125,7 +123,6 @@ function getCourseStatus(courseName, eventDate, allData) {
     return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" };
   }
 }
-// 只要異動該欄位才紅字強調
 function fieldClass(item, field) {
   if (field === '日期')    return item["異動日期"]    ? "highlight-red" : "";
   if (field === '起始時間')return item["異動起始時間"]? "highlight-red" : "";
@@ -140,9 +137,8 @@ function getClass(item) {
   return result;
 }
 
-// === 重點合併：同一課/教師/堂次，每天僅一筆；如有異動，顯示異動（紅），原本顯示灰底白字+註【已異動】===
+// 合併：如有異動，原本顯示灰底白字+註【已異動】，異動後正常顯示，避免重複時間
 function mergeAndRenumber(data) {
-  // key為「課程|教師|原始日期」，以便於比對異動
   const records = {};
   const disabled = [];
   data.forEach(item => {
@@ -151,9 +147,8 @@ function mergeAndRenumber(data) {
       item["教師"]||"",
       fixDate(item["日期"])
     ].join('|');
-    // 若該筆資料有異動日期，則舊資料須disable
     if (item["異動日期"]) {
-      // 先加入異動資料
+      // 異動後
       const newKey = [
         getCourseLabel(item),
         item["教師"]||"",
@@ -164,14 +159,13 @@ function mergeAndRenumber(data) {
         __displayDate: fixDate(item["異動日期"]),
         __isDisabled: false
       };
-      // 舊資料設為灰底（只保留一次！）
+      // 異動前
       if (!records[key] || !records[key].__isDisabled) {
         let clone = { ...item, __displayDate: fixDate(item["日期"]), __isDisabled: true };
         disabled.push(clone);
         records[key] = clone;
       }
     } else {
-      // 無異動則直接加入
       records[key] = {
         ...item,
         __displayDate: fixDate(item["日期"]),
@@ -179,17 +173,13 @@ function mergeAndRenumber(data) {
       };
     }
   });
-  // 統一排序後，計算堂次
+  // 只保留每一課、每位教師、每一天「唯一一筆異動前灰底」
   let allRows = Object.values(records).concat(disabled).filter(x=>x.__displayDate);
-  // 若有同key但異動/原始重複，舊的只顯示一次
   allRows = allRows.filter((row, idx, arr) => {
     if (!row.__isDisabled) return true;
-    // 只留每種key的第一筆異動前紀錄
     return arr.findIndex(x => x.__isDisabled && x.__displayDate===row.__displayDate && getCourseLabel(x)===getCourseLabel(row) && (x["教師"]||"") === (row["教師"]||"")) === idx;
   });
-  // 按日期排序
   allRows.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-  // 計算堂次
   const courseGroup = {};
   allRows.forEach(item => {
     const groupKey = getCourseLabel(item) + "|" + (item["教師"]||"");
@@ -215,7 +205,6 @@ document.addEventListener('DOMContentLoaded', async function () {
   const data = await res.json();
   allData = data;
 
-  // 堂次自動重排
   const merged = mergeAndRenumber(data);
 
   const courses = [...new Set(merged.filter(x=>!x.__isDisabled).map(item => getCourseLabel(item)))].sort((a, b) => {
@@ -250,8 +239,7 @@ function renderCalendar(data) {
     const bgColor = item.__isDisabled ? "#888" : getColorByName(item["課程名稱"]);
     const txtColor = item.__isDisabled ? "#fff" : "#222";
     const classroom = item["異動教室"] || item["教室"] || "";
-    let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
-    if (item.__isDisabled) title += "\n【已異動】";
+    let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}${item.__isDisabled ? "\n【已異動】" : ""}`;
     return {
       title: title,
       start: `${date}T${startTime}`,
@@ -298,7 +286,7 @@ function renderCalendar(data) {
         info.el.style.color = "#fff";
         if (titleNode) titleNode.style.color = "#fff";
       }
-      // 紅字強調異動後
+      // 異動後紅字
       if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"] && !info.event.extendedProps.__isDisabled) {
         titleNode.innerHTML = titleNode.innerHTML.replace(
           info.event.extendedProps["異動教室"],
