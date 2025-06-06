@@ -32,9 +32,6 @@
       vertical-align: middle;
     }
     .highlight-red { color: #C00000 !important; font-weight: bold !important;}
-    .disabled-bg { background: #888 !important; color: #fff !important; }
-    .disabled-txt { color: #fff !important; background: #888 !important; }
-    .disabled-tag { border-radius: 9px; padding: 0px 6px; background: #555; color: #fff; font-size: 0.8em; margin-left: 6px; }
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
     #list-container th, #list-container td {
@@ -77,25 +74,72 @@ function fixDate(dateStr) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
   return dateStr;
 }
+
+// 修正並統一時間格式，處理12小時制轉24小時制
 function fixTime(t) {
-  // 只保留 HH:mm 格式
   if (!t) return "";
-  let m = t.match(/^(\d{1,2}):(\d{2})/);
-  if (m) {
-    let h = m[1].padStart(2,"0");
-    return `${h}:${m[2]}`;
+  
+  // 移除多餘的文字和空格
+  let timeStr = t.toString().trim();
+  
+  // 處理包含中文的時間格式，如 "下午5:10" 
+  if (timeStr.includes('上午') || timeStr.includes('下午')) {
+    // 提取時間部分
+    let match = timeStr.match(/(上午|下午)(\d{1,2}):(\d{2})/);
+    if (match) {
+      let period = match[1];
+      let hour = parseInt(match[2]);
+      let minute = match[3];
+      
+      if (period === '下午' && hour !== 12) {
+        hour += 12;
+      } else if (period === '上午' && hour === 12) {
+        hour = 0;
+      }
+      
+      return `${hour.toString().padStart(2,'0')}:${minute}`;
+    }
   }
+  
+  // 處理 AM/PM 格式
+  if (timeStr.includes('AM') || timeStr.includes('PM')) {
+    let match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (match) {
+      let hour = parseInt(match[1]);
+      let minute = match[2];
+      let period = match[3].toUpperCase();
+      
+      if (period === 'PM' && hour !== 12) {
+        hour += 12;
+      } else if (period === 'AM' && hour === 12) {
+        hour = 0;
+      }
+      
+      return `${hour.toString().padStart(2,'0')}:${minute}`;
+    }
+  }
+  
+  // 處理純數字24小時制格式
+  let match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (match) {
+    let hour = match[1].padStart(2,"0");
+    return `${hour}:${match[2]}`;
+  }
+  
   return "";
 }
+
 function courseSortKey(courseName) {
   const match = courseName.match(/^([一二三])[上下]/);
   let n = 0;
   if (match) n = {一:1,二:2,三:3}[match[1]];
   return n + courseName;
 }
+
 function getCourseLabel(item) {
   return item["課程名稱"].replace(/\s+/g, ' ').trim();
 }
+
 function getColorByName(name) {
   const colors = [
     '#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A',
@@ -106,6 +150,7 @@ function getColorByName(name) {
   for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
   return colors[hash % colors.length];
 }
+
 function getCourseStatus(courseName, eventDate, allData) {
   const allEvents = allData.filter(x => getCourseLabel(x) === courseName)
     .sort((a, b) => new Date(a["日期"]) - new Date(b["日期"]));
@@ -123,6 +168,7 @@ function getCourseStatus(courseName, eventDate, allData) {
     return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" };
   }
 }
+
 function fieldClass(item, field) {
   if (field === '日期')    return item["異動日期"]    ? "highlight-red" : "";
   if (field === '起始時間')return item["異動起始時間"]? "highlight-red" : "";
@@ -130,72 +176,47 @@ function fieldClass(item, field) {
   if (field === '教室')    return item["異動教室"]    ? "highlight-red" : "";
   return "";
 }
-function getClass(item) {
-  const result = [];
-  if (item.__isDisabled) result.push("disabled-bg");
-  if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
-  return result;
-}
 
-// 合併：如有異動，原本顯示灰底白字+註【已異動】，異動後正常顯示，避免重複時間
+// 修改：只保留異動後的資料，完全移除異動前的記錄
 function mergeAndRenumber(data) {
-  const records = {};
-  const disabled = [];
+  const finalRecords = [];
+  
   data.forEach(item => {
-    const key = [
-      getCourseLabel(item),
-      item["教師"]||"",
-      fixDate(item["日期"])
-    ].join('|');
+    // 如果有異動資料，使用異動後的資料
     if (item["異動日期"]) {
-      // 異動後
-      const newKey = [
-        getCourseLabel(item),
-        item["教師"]||"",
-        fixDate(item["異動日期"])
-      ].join('|');
-      records[newKey] = {
+      finalRecords.push({
         ...item,
         __displayDate: fixDate(item["異動日期"]),
-        __isDisabled: false
-      };
-      // 異動前
-      if (!records[key] || !records[key].__isDisabled) {
-        let clone = { ...item, __displayDate: fixDate(item["日期"]), __isDisabled: true };
-        disabled.push(clone);
-        records[key] = clone;
-      }
+        __isModified: true  // 標記為已異動，用於顯示紅字
+      });
     } else {
-      records[key] = {
+      // 沒有異動的正常資料
+      finalRecords.push({
         ...item,
         __displayDate: fixDate(item["日期"]),
-        __isDisabled: false
-      };
+        __isModified: false
+      });
     }
   });
-  // 只保留每一課、每位教師、每一天「唯一一筆異動前灰底」
-  let allRows = Object.values(records).concat(disabled).filter(x=>x.__displayDate);
-  allRows = allRows.filter((row, idx, arr) => {
-    if (!row.__isDisabled) return true;
-    return arr.findIndex(x => x.__isDisabled && x.__displayDate===row.__displayDate && getCourseLabel(x)===getCourseLabel(row) && (x["教師"]||"") === (row["教師"]||"")) === idx;
-  });
-  allRows.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
+  
+  // 排序並重新編號
+  finalRecords.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
+  
   const courseGroup = {};
-  allRows.forEach(item => {
+  finalRecords.forEach(item => {
     const groupKey = getCourseLabel(item) + "|" + (item["教師"]||"");
     if (!courseGroup[groupKey]) courseGroup[groupKey] = [];
     courseGroup[groupKey].push(item);
   });
+  
   Object.values(courseGroup).forEach(group => {
-    let idx = 1;
-    group.forEach(item => {
-      if (!item.__isDisabled) {
-        item.__showIdx = idx++;
-        item.__showTotal = group.filter(x=>!x.__isDisabled).length;
-      }
+    group.forEach((item, idx) => {
+      item.__showIdx = idx + 1;
+      item.__showTotal = group.length;
     });
   });
-  return allRows;
+  
+  return finalRecords.filter(x => x.__displayDate); // 過濾掉無效日期
 }
 
 let allData = [];
@@ -207,7 +228,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   const merged = mergeAndRenumber(data);
 
-  const courses = [...new Set(merged.filter(x=>!x.__isDisabled).map(item => getCourseLabel(item)))].sort((a, b) => {
+  const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => {
     return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
   });
   const select = document.getElementById('courseSelect');
@@ -223,7 +244,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   select.addEventListener('change', function () {
     const value = this.value;
-    const filtered = (!value) ? merged : merged.filter(item => getCourseLabel(item) === value || (item.__isDisabled && getCourseLabel(item) === value));
+    const filtered = (!value) ? merged : merged.filter(item => getCourseLabel(item) === value);
     renderCalendar(filtered);
     renderList(filtered);
   });
@@ -236,18 +257,31 @@ function renderCalendar(data) {
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
-    const bgColor = item.__isDisabled ? "#888" : getColorByName(item["課程名稱"]);
-    const txtColor = item.__isDisabled ? "#fff" : "#222";
+    const bgColor = getColorByName(item["課程名稱"]);
     const classroom = item["異動教室"] || item["教室"] || "";
-    let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}${item.__isDisabled ? "\n【已異動】" : ""}`;
+    
+    let title = `${course}\n${startTime} - ${endTime}`;
+    if (item["教師"]) title += ` ${item["教師"]}`;
+    if (classroom) title += `\n${classroom}`;
+    
     return {
       title: title,
       start: `${date}T${startTime}`,
       end: `${date}T${endTime}`,
-      classNames: getClass(item),
-      extendedProps: { ...item, bg: bgColor, fg: txtColor, statusIcon: status.icon, statusLabel: status.label, course, classroom, startTime, endTime }
+      extendedProps: { 
+        ...item, 
+        bg: bgColor, 
+        fg: "#222", 
+        statusIcon: status.icon, 
+        statusLabel: status.label, 
+        course, 
+        classroom, 
+        startTime, 
+        endTime 
+      }
     };
   });
+  
   if (calendar) calendar.destroy();
   calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     initialView: 'dayGridMonth',
@@ -281,29 +315,27 @@ function renderCalendar(data) {
       info.el.style.border = "none";
       info.el.title = info.event.extendedProps.statusLabel;
       info.el.style.height = "auto";
-      if (info.event.extendedProps.__isDisabled) {
-        info.el.style.backgroundColor = "#888";
-        info.el.style.color = "#fff";
-        if (titleNode) titleNode.style.color = "#fff";
-      }
-      // 異動後紅字
-      if (info.event.extendedProps["異動教室"] && info.event.extendedProps["教室"] && !info.event.extendedProps.__isDisabled) {
-        titleNode.innerHTML = titleNode.innerHTML.replace(
-          info.event.extendedProps["異動教室"],
-          `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
-        );
-      }
-      if (info.event.extendedProps["異動起始時間"] && !info.event.extendedProps.__isDisabled) {
-        titleNode.innerHTML = titleNode.innerHTML.replace(
-          info.event.extendedProps["異動起始時間"],
-          `<span class="highlight-red">${info.event.extendedProps["異動起始時間"]}</span>`
-        );
-      }
-      if (info.event.extendedProps["異動結束時間"] && !info.event.extendedProps.__isDisabled) {
-        titleNode.innerHTML = titleNode.innerHTML.replace(
-          info.event.extendedProps["異動結束時間"],
-          `<span class="highlight-red">${info.event.extendedProps["異動結束時間"]}</span>`
-        );
+      
+      // 異動後的資料顯示紅字
+      if (info.event.extendedProps.__isModified && titleNode) {
+        if (info.event.extendedProps["異動教室"]) {
+          titleNode.innerHTML = titleNode.innerHTML.replace(
+            info.event.extendedProps["異動教室"],
+            `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
+          );
+        }
+        if (info.event.extendedProps["異動起始時間"]) {
+          titleNode.innerHTML = titleNode.innerHTML.replace(
+            info.event.extendedProps.startTime,
+            `<span class="highlight-red">${info.event.extendedProps.startTime}</span>`
+          );
+        }
+        if (info.event.extendedProps["異動結束時間"]) {
+          titleNode.innerHTML = titleNode.innerHTML.replace(
+            info.event.extendedProps.endTime,
+            `<span class="highlight-red">${info.event.extendedProps.endTime}</span>`
+          );
+        }
       }
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
@@ -323,27 +355,27 @@ function renderList(data) {
     <th>堂次</th>
     <th>備註</th>
   </tr>`;
+  
   for (let item of data) {
     const date = item.__displayDate;
     const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
     const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
     const classroom = item["異動教室"] || item["教室"] || "";
     const course = getCourseLabel(item);
-    let rowClass = item.__isDisabled ? "disabled-bg" : "";
-    let cellClass = item.__isDisabled ? "disabled-txt" : "";
-    html += `<tr class="${rowClass}">
+    
+    html += `<tr>
       <td style="font-size:1.3em;">🟡</td>
-      <td class="${fieldClass(item, "日期")} ${cellClass}">${date}${item.__isDisabled ? '<span class="disabled-tag">已異動</span>' : ''}</td>
-      <td class="${cellClass}">
+      <td class="${fieldClass(item, "日期")}">${date}</td>
+      <td>
         <span class="${fieldClass(item, "起始時間")}">${startTime}</span>
         -
         <span class="${fieldClass(item, "結束時間")}">${endTime}</span>
       </td>
-      <td class="${cellClass}">${course}</td>
-      <td class="${cellClass}">${item["教師"]||""}</td>
-      <td class="${fieldClass(item, "教室")} ${cellClass}">${classroom}</td>
-      <td class="${cellClass}">${item.__showIdx ? (item.__showIdx + '/' + item.__showTotal) : ''}</td>
-      <td class="${cellClass}">${item["備註"]||""}</td>
+      <td>${course}</td>
+      <td>${item["教師"]||""}</td>
+      <td class="${fieldClass(item, "教室")}">${classroom}</td>
+      <td>${item.__showIdx ? (item.__showIdx + '/' + item.__showTotal) : ''}</td>
+      <td>${item["備註"]||""}</td>
     </tr>`;
   }
   html += `</table>`;
