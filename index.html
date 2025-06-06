@@ -30,10 +30,15 @@
       if (typeof date === "string" && date.includes("T")) {
         date = date.split("T")[0];
       }
-      // ★ 這裡強制把「/」換成「-」才是 FullCalendar 可接受格式
+      // 1. 替換 / 為 -
       date = date.replace(/\//g, "-");
-      const start = `${date}T${item["起始時間"]}`;
-      const end = `${date}T${item["結束時間"]}`;
+      // 2. 拆成 [年, 月, 日]，補零
+      let [yyyy, mm, dd] = date.split("-");
+      if (mm && mm.length === 1) mm = "0" + mm;
+      if (dd && dd.length === 1) dd = "0" + dd;
+      const dateFixed = `${yyyy}-${mm}-${dd}`;
+      const start = `${dateFixed}T${item["起始時間"]}`;
+      const end = `${dateFixed}T${item["結束時間"]}`;
       const color = getColorByName(item["課程名稱"]);
       return {
         title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
