@@ -113,17 +113,6 @@ function getColorByName(name) {
   return colors[hash % colors.length];
 }
 
-function getTextColor(bgColor) {
-  let r = 0, g = 0, b = 0;
-  if (bgColor.length === 7) {
-    r = parseInt(bgColor.substr(1,2),16);
-    g = parseInt(bgColor.substr(3,2),16);
-    b = parseInt(bgColor.substr(5,2),16);
-  }
-  const brightness = 0.299*r + 0.587*g + 0.114*b;
-  return (brightness > 186) ? "#222" : "#fff";
-}
-
 function renderCalendar(data) {
   const events = data.map(item => {
     let date = item["日期"];
@@ -137,14 +126,13 @@ function renderCalendar(data) {
     const endTime = item["結束時間"]?.slice(0,5);
     const course = getCourseLabel(item);
     const bgColor = getColorByName(item["課程名稱"]);
-    const textColor = getTextColor(bgColor);
     const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
     return {
       title: title,
       start: `${dateFixed}T${item["起始時間"]}`,
       end: `${dateFixed}T${item["結束時間"]}`,
       classNames: getClass(item),
-      extendedProps: { ...item, bg: bgColor, fg: textColor }
+      extendedProps: { ...item, bg: bgColor }
     };
   });
 
@@ -163,12 +151,14 @@ function renderCalendar(data) {
     dayMaxEvents: false,
     nowIndicator: true,
     eventOverlap: false,
+    // ★ 關鍵設定：讓 weekly 不重疊、全部都 stack 展開
+    slotEventOverlap: false,
+    eventMaxStack: 99,
     eventDidMount: function(info) {
-      const bg = info.event.extendedProps.bg;
-      const fg = info.event.extendedProps.fg;
-      info.el.style.backgroundColor = bg;
-      info.el.style.color = fg;
-      info.el.style.setProperty('color', fg, 'important');
+      // 月曆/週曆全都強制黑字
+      info.el.style.backgroundColor = info.event.extendedProps.bg;
+      info.el.style.color = "#222";
+      info.el.style.setProperty('color', '#222', 'important');
       info.el.style.borderRadius = "7px";
       info.el.style.border = "none";
       info.el.title = "";
