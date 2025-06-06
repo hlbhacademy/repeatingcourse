@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
-  <title>113-2 重補修課程查詢日曆</title>
+  <title>113-2 國立花蓮高商重補修課程查詢日曆</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
@@ -20,16 +20,12 @@
       font-size: 1.1em;
     }
     #calendar { max-width: 1100px; margin: auto; }
-    /* 月檢視事件顯示完整課程名稱不省略 */
     .fc-daygrid-event-dot { display: none; }
     .fc-daygrid-event .fc-event-title {
       white-space: pre-line;
       font-weight: bold;
       font-size: 1.06em;
-      color: #172766;
     }
-    .fc-event.critical { background-color: #ffdddd !important; }
-    .fc-event.changed { border: 2px solid red !important; }
     /* 文字表格區 */
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
@@ -45,9 +41,10 @@
       #calendar, #list-container { width: 100%; font-size: 0.96em;}
       #filter-bar { font-size: 1.1em;}
     }
-.fc-event, .fc-event-title, .fc-timegrid-event .fc-event-title, .fc-daygrid-event .fc-event-title {
-  color: inherit !important; /* 交由 JS 動態決定 */
-}
+    /* 保證所有事件視圖都繼承JS設置字色 */
+    .fc-event, .fc-event-title, .fc-timegrid-event .fc-event-title, .fc-daygrid-event .fc-event-title {
+      color: inherit !important;
+    }
   </style>
 </head>
 <body>
@@ -112,7 +109,7 @@ function getColorByName(name) {
   const colors = [
     '#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A',
     '#9370DB','#FF8C00','#20B2AA','#E9967A','#48D1CC',
-    '#C71585','#B0E0E6'
+    '#C71585','#B0E0E6','#FFB347','#B6FFB6','#B6B6FF'
   ];
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
@@ -121,14 +118,12 @@ function getColorByName(name) {
 
 // ★ 自動判斷字色：背景深→白字，背景淺→深字
 function getTextColor(bgColor) {
-  // 將 hex 轉 rgb
   let r = 0, g = 0, b = 0;
   if (bgColor.length === 7) {
     r = parseInt(bgColor.substr(1,2),16);
     g = parseInt(bgColor.substr(3,2),16);
     b = parseInt(bgColor.substr(5,2),16);
   }
-  // W3C公式：亮度>186為淺色，否則為深色
   const brightness = 0.299*r + 0.587*g + 0.114*b;
   return (brightness > 186) ? "#222" : "#fff";
 }
@@ -187,32 +182,8 @@ function renderCalendar(data) {
   calendar.render();
 }
 
-  if (calendar) calendar.destroy();
-
-  calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-    initialView: 'dayGridMonth', // 預設月視圖
-    locale: 'zh-tw',
-    headerToolbar: {
-      left: 'prev,next today',
-      center: 'title',
-      right: 'dayGridMonth,timeGridWeek,listWeek'
-    },
-    events,
-    eventDidMount: function(info) {
-      info.el.title = ""; // 不用瀏覽器原生 tooltip
-    },
-    eventOrder: "title,start",
-    dayMaxEvents: false, // 不顯示+X more
-    nowIndicator: true,
-    eventOverlap: false,
-  });
-
-  calendar.render();
-}
-
-// 新增：同步表格文字列印所有課程
+// 列出所有課程（跨月）
 function renderList(data) {
-  // 日期先排序
   const sorted = [...data].sort((a, b) => {
     let da = a["日期"], db = b["日期"];
     if (typeof da === "string" && da.includes("T")) da = da.split("T")[0];
@@ -251,12 +222,6 @@ function renderList(data) {
   document.getElementById('list-content').innerHTML = html;
 }
 
-function getColorByName(name) {
-  const colors = ['#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A','#9370DB','#FF8C00','#20B2AA'];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
-  return colors[hash % colors.length];
-}
 function getClass(item) {
   const result = [];
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
