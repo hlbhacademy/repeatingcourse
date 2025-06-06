@@ -7,36 +7,61 @@
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 1em; }
-    #filter-bar { max-width: 1100px; margin: auto; margin-bottom: 1em; display: flex; align-items: center; }
+    body { font-family: 'Noto Sans TC', 'Microsoft JhengHei', Arial, sans-serif; margin: 1em; }
+    h2 { text-align: center; margin-bottom: 0.5em; }
+    #filter-bar {
+      display: flex; justify-content: center; align-items: center;
+      margin-bottom: 1em;
+      font-size: 1.4em;
+    }
+    #courseSelect {
+      margin-left: 0.5em;
+      padding: 0.4em 1em;
+      font-size: 1.1em;
+    }
     #calendar { max-width: 1100px; margin: auto; }
+    .fc-event-title { font-weight: bold; font-size: 1em; white-space: pre-line; }
     .fc-event.critical { background-color: #ffdddd !important; }
     .fc-event.changed { border: 2px solid red !important; }
-    #courseSelect { margin-left: 0.5em; padding: 0.2em; font-size: 1em; }
+    /* 月檢視事件顯示完整課程名稱不省略 */
+    .fc-daygrid-event-dot { display: none; }
+    .fc-daygrid-event .fc-event-title { white-space: pre-line; font-weight: bold; font-size: 1em;}
+    /* 文字表格區 */
+    #list-container { max-width: 1100px; margin: 2em auto; }
+    #list-container table { border-collapse: collapse; width: 100%; }
+    #list-container th, #list-container td {
+      border: 1px solid #aaa; padding: 0.5em; text-align: center;
+      font-size: 1.08em;
+    }
+    #list-container th {
+      background: #f4f4f4;
+      font-size: 1.13em;
+    }
+    @media (max-width: 800px) {
+      #calendar, #list-container { width: 100%; font-size: 0.96em;}
+      #filter-bar { font-size: 1.1em;}
+    }
   </style>
 </head>
 <body>
-  <h2>📅 113-2 花蓮高商重補修課程查詢日曆</h2>
+  <h2>📅 113-2 重補修課程查詢日曆</h2>
   <div id="filter-bar">
     <label for="courseSelect">篩選課程：</label>
     <select id="courseSelect"><option value="">全部</option></select>
   </div>
   <div id="calendar"></div>
-
+  <div id="list-container">
+    <h3>課程列表（含跨月顯示，依日期排序）</h3>
+    <div id="list-content"></div>
+  </div>
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 新增：排序工具（年級＞科目＞時間）
+// 排序用
 function courseSortKey(courseName) {
-  // 範例: "三上 數學A"
-  // 取出"三上"排序用
   const match = courseName.match(/^([一二三])[上下]/);
   let n = 0;
-  if (match) {
-    if (match[1] === '一') n = 1;
-    if (match[1] === '二') n = 2;
-    if (match[1] === '三') n = 3;
-  }
+  if (match) n = {一:1,二:2,三:3}[match[1]];
   return n + courseName;
 }
 
@@ -61,20 +86,17 @@ document.addEventListener('DOMContentLoaded', async function () {
   });
 
   renderCalendar(data);
+  renderList(data);
 
-  // 下拉選單切換時，重新渲染
   select.addEventListener('change', function () {
     const value = this.value;
-    if (!value) {
-      renderCalendar(allData);
-    } else {
-      renderCalendar(allData.filter(item => getCourseLabel(item) === value));
-    }
+    const filtered = (!value) ? allData : allData.filter(item => getCourseLabel(item) === value);
+    renderCalendar(filtered);
+    renderList(filtered);
   });
 });
 
 function getCourseLabel(item) {
-  // 最清楚的格式，先顯示年級科目再附加班級（如適用）
   return item["課程名稱"].replace(/\s+/g, ' ').trim();
 }
 
@@ -87,12 +109,10 @@ function renderCalendar(data) {
     if (mm && mm.length === 1) mm = "0" + mm;
     if (dd && dd.length === 1) dd = "0" + dd;
     const dateFixed = `${yyyy}-${mm}-${dd}`;
-    // 改：課程名稱優先（新版title組成）
     const startTime = item["起始時間"]?.slice(0,5);
     const endTime = item["結束時間"]?.slice(0,5);
     const course = getCourseLabel(item);
-    // title優先顯示課程名稱、教師、時間
-    const title = `${course}\n${startTime}-${endTime} ${item["教師"]||""}`;
+    const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
     return {
       title: title,
       start: `${dateFixed}T${item["起始時間"]}`,
@@ -103,50 +123,68 @@ function renderCalendar(data) {
     };
   });
 
-  // 銷毀前一個 calendar
   if (calendar) calendar.destroy();
 
   calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-    initialView: 'timeGridWeek', // 周視圖（預設周表，避免重疊）
+    initialView: 'dayGridMonth', // 預設月視圖
     locale: 'zh-tw',
     headerToolbar: {
       left: 'prev,next today',
       center: 'title',
       right: 'dayGridMonth,timeGridWeek,listWeek'
     },
-    // 新功能2：週表顯示以 row 堆疊（不重疊）
-    slotMinTime: "07:00:00",
-    slotMaxTime: "20:00:00",
-    allDaySlot: false,
     events,
     eventDidMount: function(info) {
-      const p = info.event.extendedProps;
-      const tooltip = 
-        `課程：${getCourseLabel(p)}\n` +
-        `教師：${p["教師"]}\n` +
-        `教室：${p["教室"]}\n` +
-        `堂數：${p["當前堂數"]}/${p["總堂數"]}\n` +
-        `備註：${p["備註"] || ""}`;
-      info.el.title = tooltip;
-      // title多行顯示
-      info.el.style.whiteSpace = "pre-line";
-      info.el.style.fontSize = "1em";
+      info.el.title = ""; // 不用瀏覽器原生 tooltip
     },
-    // 課程排序依「課程名稱」及開始時間
     eventOrder: "title,start",
-    eventMaxStack: 99,  // 讓事件全部以row方式展開，不顯示「+X more」
+    dayMaxEvents: false, // 不顯示+X more
     nowIndicator: true,
-    slotLabelFormat: {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    },
-    dayMaxEvents: false, // 關閉日曆「+X more」
-    // 強制不重疊
-    eventOverlap: false
+    eventOverlap: false,
   });
 
   calendar.render();
+}
+
+// 新增：同步表格文字列印所有課程
+function renderList(data) {
+  // 日期先排序
+  const sorted = [...data].sort((a, b) => {
+    let da = a["日期"], db = b["日期"];
+    if (typeof da === "string" && da.includes("T")) da = da.split("T")[0];
+    if (typeof db === "string" && db.includes("T")) db = db.split("T")[0];
+    da = da.replace(/\//g, "-");
+    db = db.replace(/\//g, "-");
+    return da > db ? 1 : da < db ? -1 : 0;
+  });
+  let html = `<table>
+  <tr>
+    <th>日期</th>
+    <th>時間</th>
+    <th>課程名稱</th>
+    <th>教師</th>
+    <th>教室</th>
+    <th>堂次</th>
+    <th>備註</th>
+  </tr>`;
+  for (let item of sorted) {
+    let date = item["日期"];
+    if (typeof date === "string" && date.includes("T")) date = date.split("T")[0];
+    date = date.replace(/\//g, "-");
+    const startTime = item["起始時間"]?.slice(0,5);
+    const endTime = item["結束時間"]?.slice(0,5);
+    html += `<tr>
+      <td>${date}</td>
+      <td>${startTime}-${endTime}</td>
+      <td style="font-weight:bold;color:#336;">${getCourseLabel(item)}</td>
+      <td>${item["教師"]||""}</td>
+      <td>${item["教室"]||""}</td>
+      <td>${item["當前堂數"]||""}/${item["總堂數"]||""}</td>
+      <td>${item["備註"]||""}</td>
+    </tr>`;
+  }
+  html += `</table>`;
+  document.getElementById('list-content').innerHTML = html;
 }
 
 function getColorByName(name) {
@@ -155,14 +193,11 @@ function getColorByName(name) {
   for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
   return colors[hash % colors.length];
 }
-
 function getClass(item) {
   const result = [];
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
   return result;
 }
 </script>
-
 </body>
 </html>
-
