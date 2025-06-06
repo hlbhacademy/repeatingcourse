@@ -9,34 +9,25 @@
   <style>
     body { font-family: 'Noto Sans TC', 'Microsoft JhengHei', Arial, sans-serif; margin: 1em; }
     h2 { text-align: center; margin-bottom: 0.5em; }
-    #filter-bar { display: flex; justify-content: center; align-items: center; margin-bottom: 1em; font-size: 1.4em;}
-    #courseSelect { margin-left: 0.5em; padding: 0.4em 1em; font-size: 1.1em;}
+    #filter-bar { display: flex; justify-content: center; align-items: center; margin-bottom: 1em; font-size: 1.3em;}
+    #courseSelect { margin-left: 0.5em; padding: 0.4em 1em; font-size: 1.08em;}
     #calendar { max-width: 1100px; margin: auto; }
-    .fc-daygrid-event-dot { display: none; }
     .fc-daygrid-event .fc-event-title, .fc-timegrid-event .fc-event-title {
-      white-space: pre-line !important;
-      font-weight: bold;
-      font-size: 1.06em;
-      word-break: break-all;
-    }
-    .fc-event, .fc-event-title, .fc-timegrid-event .fc-event-title, .fc-daygrid-event .fc-event-title { color: #222 !important; }
-    .course-icon {
-      font-size: 1.3em;
-      margin-right: 2px;
-      vertical-align: middle;
+      white-space: pre-line !important; font-weight: bold; font-size: 1.06em;
     }
     .highlight-red { color: #C00000 !important; font-weight: bold !important;}
-    .emph-border { border: 3px solid #d00 !important; box-sizing: border-box; }
+    .bold-outline { border: 2.5px solid #c00 !important; }
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
     #list-container th, #list-container td {
       border: 1px solid #aaa; padding: 0.5em; text-align: center; font-size: 1.08em;
     }
     #list-container th { background: #f4f4f4; font-size: 1.13em;}
-    .emph-row { border: 3px solid #d00 !important; }
+    .strong-txt { color: #c00; font-weight: bold; }
+    .calendar-strong { border: 3px solid #c00 !important; box-shadow: 0 0 3px #c00 !important;}
     @media (max-width: 800px) {
-      #calendar, #list-container { width: 100%; font-size: 0.96em;}
-      #filter-bar { font-size: 1.1em;}
+      #calendar, #list-container { width: 100%; font-size: 0.97em;}
+      #filter-bar { font-size: 1em;}
     }
   </style>
 </head>
@@ -48,8 +39,9 @@
   </div>
   <div id="calendar"></div>
   <div id="list-container">
-    <h3>課程列表（含跨月顯示，依日期排序）</h3>
+    <h3>課程列表（依日期排序）</h3>
     <div id="list-content"></div>
+    <div id="course-summary" style="font-weight:bold;margin:1em 0 0 0;text-align:right;"></div>
   </div>
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
@@ -84,7 +76,7 @@ function courseSortKey(courseName) {
   return n + courseName;
 }
 function getCourseLabel(item) {
-  return item["課程名稱"].replace(/\s+/g, ' ').trim();
+  return (item["課程名稱"]||"").replace(/\s+/g, ' ').trim();
 }
 function getColorByName(name) {
   const colors = [
@@ -99,9 +91,11 @@ function getColorByName(name) {
 function getCourseStatus(courseName, eventDate, allData) {
   const allEvents = allData.filter(x => getCourseLabel(x) === courseName)
     .sort((a, b) => new Date(a["日期"]) - new Date(b["日期"]));
-  const total = parseInt(allEvents[0]?.["總堂數"] || allEvents.length);
+  if (!allEvents.length) return { icon: "", color: "#aaa", label: "" };
+  const total = parseInt(allEvents[0]["總堂數"] || allEvents.length);
   const today = new Date();
-  const lastDay = new Date(allEvents[allEvents.length - 1]?.["日期"]);
+  const eventDay = new Date(eventDate);
+  const lastDay = new Date(allEvents[allEvents.length - 1]["日期"]);
   const finishedCount = allEvents.filter(e => new Date(e["日期"]) < today).length;
   if (today > lastDay) {
     return { icon: "🔴", color: "#e74c3c", label: "已結束" };
@@ -113,66 +107,37 @@ function getCourseStatus(courseName, eventDate, allData) {
   }
 }
 
-// 主要合併與異動粗框邏輯
-function mergeByEmphasize(data) {
-  // 1. 用課程名稱+教師+原日期為索引
-  const map = new Map();
-  data.forEach(row => {
-    const key = [getCourseLabel(row), row["教師"], fixDate(row["日期"])].join("|");
-    map.set(key, row);
-  });
-  const keepRows = [];
-  data.forEach(row => {
-    // 若有異動強調，優先保留異動後那一筆，且移除原本那一天
-    if (row["異動強調"] === "是") {
-      const emphRow = { ...row, __emphasize: true, __displayDate: fixDate(row["異動日期"] || row["日期"]) };
-      // 防止重複
-      if (!keepRows.find(r => getCourseLabel(r) === getCourseLabel(row) && r["教師"] === row["教師"] && r.__displayDate === emphRow.__displayDate)) {
-        keepRows.push(emphRow);
-      }
-    } else {
-      // 沒異動強調，但也不能有被異動的相同課、同教師、同原日期
-      const gotEmph = data.find(r =>
-        r["異動強調"] === "是" &&
-        getCourseLabel(r) === getCourseLabel(row) &&
-        r["教師"] === row["教師"] &&
-        fixDate(r["日期"]) === fixDate(row["日期"])
-      );
-      if (!gotEmph) {
-        keepRows.push({ ...row, __emphasize: false, __displayDate: fixDate(row["日期"]) });
-      }
-    }
+// 合併邏輯：只要有「異動強調」為是的，套用粗紅框/紅字，其他正常
+function mergeAndSort(data) {
+  // 只顯示「異動強調」最後一次為「是」的該日課程（去重）
+  const recordMap = {};
+  data.forEach(item => {
+    const key = [
+      getCourseLabel(item),
+      item["教師"]||"",
+      fixDate(item["日期"])
+    ].join('|');
+    recordMap[key] = {
+      ...item,
+      __displayDate: fixDate(item["日期"]),
+      __isStrong: (item["異動強調"]==="是")
+    };
   });
   // 依日期排序
-  keepRows.sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
-  // 堂次重新編號（依課程＋教師分組）
-  const courseGroup = {};
-  keepRows.forEach(item => {
-    const groupKey = getCourseLabel(item) + "|" + (item["教師"]||"");
-    if (!courseGroup[groupKey]) courseGroup[groupKey] = [];
-    courseGroup[groupKey].push(item);
-  });
-  Object.values(courseGroup).forEach(group => {
-    group.forEach((item, idx) => {
-      item.__showIdx = idx+1;
-      item.__showTotal = group.length;
-    });
-  });
-  return keepRows;
+  return Object.values(recordMap).sort((a, b) => a.__displayDate.localeCompare(b.__displayDate));
 }
 
 let allData = [];
 let calendar = null;
+
 document.addEventListener('DOMContentLoaded', async function () {
   const res = await fetch(apiUrl);
   const data = await res.json();
   allData = data;
 
-  const merged = mergeByEmphasize(data);
+  let merged = mergeAndSort(data);
 
-  const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => {
-    return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
-  });
+  const courses = [...new Set(merged.map(item => getCourseLabel(item)))].sort((a, b) => courseSortKey(a) > courseSortKey(b) ? 1 : -1);
   const select = document.getElementById('courseSelect');
   courses.forEach(c => {
     const opt = document.createElement('option');
@@ -195,19 +160,18 @@ document.addEventListener('DOMContentLoaded', async function () {
 function renderCalendar(data) {
   const events = data.map(item => {
     const date = item.__displayDate;
-    const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
-    const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
+    const startTime = fixTime(item["起始時間"]);
+    const endTime = fixTime(item["結束時間"]);
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
-    const bgColor = getColorByName(item["課程名稱"]);
-    const classroom = item["異動教室"] || item["教室"] || "";
+    const classroom = item["教室"] || "";
     let title = `${course}\n${startTime} - ${endTime}${item["教師"] ? " " + item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
     return {
       title: title,
       start: `${date}T${startTime}`,
       end: `${date}T${endTime}`,
-      classNames: item.__emphasize ? ["emph-border"] : [],
-      extendedProps: { ...item, bg: bgColor, fg: "#222", statusIcon: status.icon, statusLabel: status.label, course, classroom, startTime, endTime }
+      classNames: item.__isStrong ? ["calendar-strong"] : [],
+      extendedProps: { ...item, statusIcon: status.icon }
     };
   });
   if (calendar) calendar.destroy();
@@ -219,16 +183,11 @@ function renderCalendar(data) {
       center: 'title',
       right: 'dayGridMonth,timeGridWeek,listWeek'
     },
-    slotMinTime: '07:00:00',
-    slotMaxTime: '20:00:00',
     events,
     eventOrder: "title,start",
     dayMaxEvents: false,
-    nowIndicator: true,
-    eventOverlap: false,
-    slotEventOverlap: false,
-    eventMaxStack: 99,
     eventDidMount: function(info) {
+      // 狀態icon
       let iconNode = document.createElement("span");
       iconNode.className = "course-icon";
       iconNode.innerText = info.event.extendedProps.statusIcon;
@@ -236,33 +195,9 @@ function renderCalendar(data) {
       if (titleNode && !titleNode.querySelector('.course-icon')) {
         titleNode.prepend(iconNode);
       }
-      info.el.style.backgroundColor = info.event.extendedProps.bg;
-      info.el.style.color = info.event.extendedProps.fg;
-      info.el.style.fontWeight = "bold";
-      info.el.style.borderRadius = "7px";
-      info.el.style.border = info.event.classNames.includes("emph-border") ? "3px solid #d00" : "none";
-      info.el.title = info.event.extendedProps.statusLabel;
-      info.el.style.height = "auto";
-      // 異動欄位紅字
-      if (info.event.extendedProps.__emphasize) {
-        if (info.event.extendedProps["異動教室"]) {
-          titleNode.innerHTML = titleNode.innerHTML.replace(
-            info.event.extendedProps["異動教室"],
-            `<span class="highlight-red">${info.event.extendedProps["異動教室"]}</span>`
-          );
-        }
-        if (info.event.extendedProps["異動起始時間"]) {
-          titleNode.innerHTML = titleNode.innerHTML.replace(
-            info.event.extendedProps.startTime,
-            `<span class="highlight-red">${info.event.extendedProps.startTime}</span>`
-          );
-        }
-        if (info.event.extendedProps["異動結束時間"]) {
-          titleNode.innerHTML = titleNode.innerHTML.replace(
-            info.event.extendedProps.endTime,
-            `<span class="highlight-red">${info.event.extendedProps.endTime}</span>`
-          );
-        }
+      if (info.event.classNames.includes("calendar-strong")) {
+        info.el.style.border = "3px solid #c00";
+        info.el.style.boxShadow = "0 0 3px #c00";
       }
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
@@ -271,6 +206,7 @@ function renderCalendar(data) {
 }
 
 function renderList(data) {
+  // 確認目前頁面是否有課程資料、是否有異動強調
   let html = `<table>
   <tr>
     <th>狀態</th>
@@ -279,34 +215,38 @@ function renderList(data) {
     <th>課程名稱</th>
     <th>教師</th>
     <th>教室</th>
-    <th>堂次</th>
     <th>備註</th>
   </tr>`;
   for (let item of data) {
     const date = item.__displayDate;
-    const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
-    const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
-    const classroom = item["異動教室"] || item["教室"] || "";
+    const startTime = fixTime(item["起始時間"]);
+    const endTime = fixTime(item["結束時間"]);
+    const classroom = item["教室"] || "";
     const course = getCourseLabel(item);
-    let rowClass = item.__emphasize ? "emph-row" : "";
-    let dateCell = item.__emphasize && item["異動日期"] ? `<span class="highlight-red">${date}</span>` : date;
-    let timeCell = `${item.__emphasize && item["異動起始時間"] ? `<span class="highlight-red">${startTime}</span>` : startTime} - ${item.__emphasize && item["異動結束時間"] ? `<span class="highlight-red">${endTime}</span>` : endTime}`;
-    let classroomCell = item.__emphasize && item["異動教室"] ? `<span class="highlight-red">${classroom}</span>` : classroom;
-    html += `<tr class="${rowClass}">
+    const strongClass = item.__isStrong ? "bold-outline" : "";
+    html += `<tr class="${strongClass}">
       <td style="font-size:1.3em;">🟡</td>
-      <td>${dateCell}</td>
-      <td>${timeCell}</td>
+      <td class="${item.__isStrong && item["異動日期"] ? "strong-txt" : ""}">${date}</td>
+      <td>
+        <span>${startTime}</span> - <span>${endTime}</span>
+      </td>
       <td>${course}</td>
       <td>${item["教師"]||""}</td>
-      <td>${classroomCell}</td>
-      <td>${item.__showIdx ? (item.__showIdx + '/' + item.__showTotal) : ''}</td>
+      <td class="${item.__isStrong && item["異動教室"] ? "strong-txt" : ""}">${classroom}</td>
       <td>${item["備註"]||""}</td>
     </tr>`;
   }
   html += `</table>`;
+
+  // 顯示本課程堂數
+  let shownCourse = document.getElementById("courseSelect").value;
+  let filtered = (!shownCourse) ? data : data.filter(item => getCourseLabel(item) === shownCourse);
+  let total = filtered.length;
+  let msg = "";
+  if (shownCourse) msg = `本課程本期共 ${total} 堂，資料依日期排序`;
   document.getElementById('list-content').innerHTML = html;
+  document.getElementById('course-summary').textContent = msg;
 }
 </script>
 </body>
 </html>
-
