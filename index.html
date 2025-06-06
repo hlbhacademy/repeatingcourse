@@ -45,6 +45,9 @@
       #calendar, #list-container { width: 100%; font-size: 0.96em;}
       #filter-bar { font-size: 1.1em;}
     }
+.fc-event, .fc-event-title, .fc-timegrid-event .fc-event-title, .fc-daygrid-event .fc-event-title {
+  color: inherit !important; /* 交由 JS 動態決定 */
+}
   </style>
 </head>
 <body>
@@ -104,6 +107,32 @@ function getCourseLabel(item) {
   return item["課程名稱"].replace(/\s+/g, ' ').trim();
 }
 
+function getColorByName(name) {
+  // 你可再擴充配色
+  const colors = [
+    '#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A',
+    '#9370DB','#FF8C00','#20B2AA','#E9967A','#48D1CC',
+    '#C71585','#B0E0E6'
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
+  return colors[hash % colors.length];
+}
+
+// ★ 自動判斷字色：背景深→白字，背景淺→深字
+function getTextColor(bgColor) {
+  // 將 hex 轉 rgb
+  let r = 0, g = 0, b = 0;
+  if (bgColor.length === 7) {
+    r = parseInt(bgColor.substr(1,2),16);
+    g = parseInt(bgColor.substr(3,2),16);
+    b = parseInt(bgColor.substr(5,2),16);
+  }
+  // W3C公式：亮度>186為淺色，否則為深色
+  const brightness = 0.299*r + 0.587*g + 0.114*b;
+  return (brightness > 186) ? "#222" : "#fff";
+}
+
 function renderCalendar(data) {
   const events = data.map(item => {
     let date = item["日期"];
@@ -116,16 +145,15 @@ function renderCalendar(data) {
     const startTime = item["起始時間"]?.slice(0,5);
     const endTime = item["結束時間"]?.slice(0,5);
     const course = getCourseLabel(item);
-    const color = getColorByName(item["課程名稱"]);
+    const bgColor = getColorByName(item["課程名稱"]);
+    const textColor = getTextColor(bgColor);
     const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
     return {
       title: title,
       start: `${dateFixed}T${item["起始時間"]}`,
       end: `${dateFixed}T${item["結束時間"]}`,
-      color: color,
-      textColor: "#222",
       classNames: getClass(item),
-      extendedProps: { ...item, bg: color }
+      extendedProps: { ...item, bg: bgColor, fg: textColor }
     };
   });
 
@@ -145,23 +173,14 @@ function renderCalendar(data) {
     nowIndicator: true,
     eventOverlap: false,
     eventDidMount: function(info) {
-      // 無論哪一種檢視都用 inline style 覆蓋
-      const color = info.event.extendedProps.bg;
-      // 月檢視
-      if (info.el.classList.contains("fc-daygrid-event")) {
-        info.el.style.backgroundColor = color;
-        info.el.style.color = "#222";
-        info.el.style.borderRadius = "7px";
-        info.el.style.border = "none";
-      }
-      // 週檢視或 list 檢視
-      if (info.el.classList.contains("fc-timegrid-event") || info.el.classList.contains("fc-list-event")) {
-        info.el.style.backgroundColor = color;
-        info.el.style.color = "#222";
-        info.el.style.borderRadius = "7px";
-        info.el.style.border = "none";
-      }
-      info.el.title = ""; // 移除原生 tooltip
+      const bg = info.event.extendedProps.bg;
+      const fg = info.event.extendedProps.fg;
+      info.el.style.backgroundColor = bg;
+      info.el.style.color = fg;
+      info.el.style.setProperty('color', fg, 'important');
+      info.el.style.borderRadius = "7px";
+      info.el.style.border = "none";
+      info.el.title = "";
     }
   });
 
