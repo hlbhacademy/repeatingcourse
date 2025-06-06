@@ -40,7 +40,6 @@
       margin-right: 2px;
       vertical-align: middle;
     }
-    /* 異動課程：加粗深藍字 */
     .changed .fc-event-title, .changed {
       color: #0A217A !important;
       font-weight: bold !important;
@@ -78,9 +77,43 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 判斷是否要顯示異動
+// 判斷是否要用異動內容（只要有任一異動欄不空就用異動資料）
 function useChanged(item) {
-  return item["異動日期"] || item["異動起始時間"] || item["異動結束時間"];
+  return item["異動日期"] || item["異動起始時間"] || item["異動結束時間"] || item["異動教室"];
+}
+
+// 將 Google Sheet 回傳的奇怪日期（如1899...）或"2025/6/17"轉成yyyy-mm-dd
+function fixDate(dateStr) {
+  if (!dateStr) return "";
+  // 若像1899-12-30T09:10:00.000Z這種，直接回空
+  if (dateStr.startsWith("1899") || dateStr.startsWith("Invalid")) return "";
+  // 若像 2025/6/17
+  if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split("/");
+    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  }
+  // 若像 2025-6-17
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split("-");
+    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  }
+  // 若已經是yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // 其他就直接回原本
+  return dateStr;
+}
+
+// 只允許 09:00 或 9:00 都轉成 09:00
+function fixTime(t) {
+  if (!t) return "";
+  let m = t.match(/^(\d{1,2}):(\d{2})/);
+  if (m) {
+    let h = m[1].padStart(2,"0");
+    return `${h}:${m[2]}`;
+  }
+  // 若時間是日期格式(錯誤)，回空
+  if (t.startsWith("1899") || t.startsWith("Invalid")) return "";
+  return t;
 }
 
 function courseSortKey(courseName) {
@@ -135,7 +168,6 @@ function getColorByName(name) {
   return colors[hash % colors.length];
 }
 
-// 狀態icon/顏色：回傳 {icon, color}
 function getCourseStatus(courseName, eventDate, allData) {
   const allEvents = allData.filter(x => getCourseLabel(x) === courseName)
     .sort((a, b) => new Date(a["日期"]) - new Date(b["日期"]));
@@ -156,19 +188,19 @@ function getCourseStatus(courseName, eventDate, allData) {
 
 function renderCalendar(data) {
   const events = data.map(item => {
-    // 用異動欄位覆蓋原資料
     const isChanged = useChanged(item);
-    const date = isChanged ? item["異動日期"] : item["日期"];
-    const startTime = isChanged ? item["異動起始時間"] : item["起始時間"];
-    const endTime = isChanged ? item["異動結束時間"] : item["結束時間"];
+    const date = fixDate(isChanged ? item["異動日期"] : item["日期"]);
+    const startTime = fixTime(isChanged ? item["異動起始時間"] : item["起始時間"]);
+    const endTime = fixTime(isChanged ? item["異動結束時間"] : item["結束時間"]);
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
     const bgColor = getColorByName(item["課程名稱"]);
-    const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
+    const classroom = isChanged ? (item["異動教室"] || item["教室"] || "") : (item["教室"] || "");
+    const title = `${course}\n${startTime}-${endTime} ${item["教師"] ? item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
     return {
       title: title,
-      start: `${date.replace(/\//g, "-")}T${startTime}`,
-      end: `${date.replace(/\//g, "-")}T${endTime}`,
+      start: `${date}T${startTime}`,
+      end: `${date}T${endTime}`,
       classNames: (isChanged ? ['changed'] : []).concat(getClass(item)),
       extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label, isChanged: isChanged }
     };
@@ -194,7 +226,6 @@ function renderCalendar(data) {
     slotEventOverlap: false,
     eventMaxStack: 99,
     eventDidMount: function(info) {
-      // icon插入在事件最前面
       let iconNode = document.createElement("span");
       iconNode.className = "course-icon";
       iconNode.innerText = info.event.extendedProps.statusIcon;
@@ -202,9 +233,7 @@ function renderCalendar(data) {
       if (titleNode && !titleNode.querySelector('.course-icon')) {
         titleNode.prepend(iconNode);
       }
-      // 背景和字色
       info.el.style.backgroundColor = info.event.extendedProps.bg;
-      // 若是異動事件，改深藍粗體
       if (info.event.extendedProps.isChanged) {
         info.el.style.color = '#0A217A';
         info.el.style.setProperty('color', '#0A217A', 'important');
@@ -229,10 +258,8 @@ function renderList(data) {
   const sorted = [...data].sort((a, b) => {
     let da = useChanged(a) ? a["異動日期"] : a["日期"];
     let db = useChanged(b) ? b["異動日期"] : b["日期"];
-    if (typeof da === "string" && da.includes("T")) da = da.split("T")[0];
-    if (typeof db === "string" && db.includes("T")) db = db.split("T")[0];
-    da = da.replace(/\//g, "-");
-    db = db.replace(/\//g, "-");
+    da = fixDate(da);
+    db = fixDate(db);
     return da > db ? 1 : da < db ? -1 : 0;
   });
   let html = `<table>
@@ -248,9 +275,10 @@ function renderList(data) {
   </tr>`;
   for (let item of sorted) {
     const isChanged = useChanged(item);
-    const date = isChanged ? item["異動日期"] : item["日期"];
-    const startTime = isChanged ? item["異動起始時間"] : item["起始時間"];
-    const endTime = isChanged ? item["異動結束時間"] : item["結束時間"];
+    const date = fixDate(isChanged ? item["異動日期"] : item["日期"]);
+    const startTime = fixTime(isChanged ? item["異動起始時間"] : item["起始時間"]);
+    const endTime = fixTime(isChanged ? item["異動結束時間"] : item["結束時間"]);
+    const classroom = isChanged ? (item["異動教室"] || item["教室"] || "") : (item["教室"] || "");
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, data);
     html += `<tr>
@@ -259,7 +287,7 @@ function renderList(data) {
       <td>${startTime}-${endTime}</td>
       <td style="font-weight:bold;${isChanged?'color:#0A217A;':''}">${course}</td>
       <td>${item["教師"]||""}</td>
-      <td>${item["教室"]||""}</td>
+      <td>${classroom}</td>
       <td>${item["當前堂數"]||""}/${item["總堂數"]||""}</td>
       <td>${item["備註"]||""}</td>
     </tr>`;
@@ -276,4 +304,3 @@ function getClass(item) {
 </script>
 </body>
 </html>
-
