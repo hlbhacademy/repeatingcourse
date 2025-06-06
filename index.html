@@ -1,42 +1,47 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>113-2 國立花蓮高商重補修課程查詢日曆</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-  <style>
-    body{font-family:'Noto Sans TC','Microsoft JhengHei',Arial,sans-serif;margin:1em}
-    h2{text-align:center;margin-bottom:.5em}
-    #filter-bar{display:flex;justify-content:center;align-items:center;margin-bottom:1em;font-size:1.4em}
-    #courseSelect{margin-left:.5em;padding:.4em 1em;font-size:1.1em}
-    #calendar{max-width:1100px;margin:auto}
-    /* 取消 FullCalendar 預設時間(下午5:10…) */
-    .fc-daygrid-event .fc-event-time{display:none!important}
-    .fc-daygrid-event-dot{display:none}
-    .fc-daygrid-event .fc-event-title,.fc-timegrid-event .fc-event-title{
-      white-space:pre-line!important;font-weight:bold;font-size:1.06em;word-break:break-all}
-    .course-icon{font-size:1.3em;margin-right:2px;vertical-align:middle}
-    .highlight-red{color:#C00000!important;font-weight:bold!important}
-    .disabled-bg{background:#888!important}
-    .disabled-txt{color:#fff!important}
-    .disabled-tag{border-radius:9px;padding:0 6px;background:#555;color:#fff;font-size:.8em;margin-left:6px}
-    #list-container{max-width:1100px;margin:2em auto}
-    #list-container table{border-collapse:collapse;width:100%}
-    #list-container th,#list-container td{border:1px solid #aaa;padding:.5em;text-align:center;font-size:1.08em}
-    #list-container th{background:#f4f4f4;font-size:1.13em}
-    @media(max-width:800px){
-      #calendar,#list-container{width:100%;font-size:.96em}
-      #filter-bar{font-size:1.1em}}
-  </style>
+<meta charset="UTF-8">
+<title>113-2 國立花蓮高商重補修課程查詢日曆</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+
+<style>
+body{font-family:'Noto Sans TC','Microsoft JhengHei',Arial,sans-serif;margin:1em}
+h2{text-align:center;margin-bottom:.5em}
+#filter-bar{display:flex;justify-content:center;align-items:center;margin-bottom:1em;font-size:1.4em}
+#courseSelect{margin-left:.5em;padding:.4em 1em;font-size:1.1em}
+#calendar{max-width:1100px;margin:auto}
+.fc-daygrid-event-dot{display:none}
+.fc-daygrid-event .fc-event-title,.fc-timegrid-event .fc-event-title{white-space:pre-line!important;font-weight:bold;font-size:1.06em;word-break:break-all}
+.fc-timegrid-event,.fc-timegrid-event .fc-event-title{color:#222!important;min-height:50px!important;height:auto!important;white-space:pre-line!important;overflow:visible!important}
+.course-icon{font-size:1.3em;margin-right:2px;vertical-align:middle}
+.highlight-red{color:#C00000!important;font-weight:bold}
+.disabled-row{background:#888!important;color:#fff!important}
+.disabled-row td{background:#888!important;color:#fff!important}
+#list-container{max-width:1100px;margin:2em auto}
+#list-container table{border-collapse:collapse;width:100%}
+#list-container th,#list-container td{border:1px solid #aaa;padding:.5em;text-align:center;font-size:1.08em}
+#list-container th{background:#f4f4f4;font-size:1.13em}
+@media(max-width:800px){
+  #calendar,#list-container{width:100%;font-size:.96em}
+  #filter-bar{font-size:1.1em}
+}
+</style>
 </head>
 <body>
 <h2>📅 113-2 國立花蓮高商重補修課程查詢日曆</h2>
-<div id="filter-bar">篩選課程：
+
+<div id="filter-bar">
+  <label for="courseSelect">篩選課程：</label>
   <select id="courseSelect"><option value="">全部</option></select>
 </div>
+
 <div id="calendar"></div>
+
 <div id="list-container">
   <h3>課程列表（含跨月顯示，依日期排序）</h3>
   <div id="list-content"></div>
@@ -45,149 +50,147 @@
 <script>
 const apiUrl="https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-/* --------- 基礎工具 --------- */
-const COLUMNS_CHANGED=["異動日期","異動教室","異動起始時間","異動結束時間"];
-
+/* ---------- 通用工具 ---------- */
 const fixDate=d=>{
-  if(!d||d.startsWith("1899"))return"";
-  if(/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(d)){let[s,m,da]=d.split("/");return`${s}-${m.padStart(2,"0")}-${da.padStart(2,"0")}`;}
-  if(/^\d{4}-\d{1,2}-\d{1,2}$/.test(d)){let[s,m,da]=d.split("-");return`${s}-${m.padStart(2,"0")}-${da.padStart(2,"0")}`;}
-  return d;
+  if(!d)return"";
+  d=d.toString().trim().replace(/\//g,"-");
+  const m=d.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  return m?`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`:"";
 };
+
 const fixTime=t=>{
-  if(!t)return"";
-  let m=t.match(/(\d{1,2}):(\d{2})/);return m?`${m[1].padStart(2,"0")}:${m[2]}`:"";
-};
-const getCourseLabel=i=>i["課程名稱"].replace(/\s+/g," ").trim();
-const getColorByName= str=>{
-  const colors=['#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A','#9370DB','#FF8C00',
-                '#20B2AA','#E9967A','#48D1CC','#C71585','#B0E0E6','#FFB347','#B6FFB6','#B6B6FF'];
-  let h=0;for(let c of str)h+=c.charCodeAt(0);return colors[h%colors.length];
+  if(!t)return"00:00";
+  t=t.toString().replace(/\s+/g,"");
+  // 中文上午/下午
+  let m=t.match(/^(上午|下午)(\d{1,2}):(\d{2})/);
+  if(m){
+    let h=parseInt(m[2],10);
+    if(m[1]==="下午"&&h!==12)h+=12;
+    if(m[1]==="上午"&&h===12)h=0;
+    return `${h.toString().padStart(2,"0")}:${m[3]}`;
+  }
+  // AM / PM
+  m=t.match(/^(\d{1,2}):(\d{2})(AM|PM)$/i);
+  if(m){
+    let h=parseInt(m[1],10);
+    if(m[3].toUpperCase()==="PM"&&h!==12)h+=12;
+    if(m[3].toUpperCase()==="AM"&&h===12)h=0;
+    return `${h.toString().padStart(2,"0")}:${m[2]}`;
+  }
+  // 純 24hr
+  m=t.match(/^(\d{1,2}):(\d{2})/);
+  return m?`${m[1].padStart(2,"0")}:${m[2]}`:"00:00";
 };
 
-/* --------- 合併規則 ---------
-   若任一異動欄位有值 => 產生兩筆:
-   (1) 原始資料 -> 灰底(__isDisabled)
-   (2) 異動後資料 -> __isModified = true
-   否則只產生原始資料
---------------------------------*/
+const getCourseLabel=it=>it["課程名稱"].replace(/\s+/g," ").trim();
+
+/* ---------- 把異動前紀錄去掉，只留異動後 ---------- */
 function mergeRows(rows){
-  const out=[];
-  const key=(c,t,d)=>`${c}|${t}|${d}`;
-  const produced=new Set(); // 避免同 key 灰底重複
-
+  const map=new Map(); // key = 課程+教師+原日期
   rows.forEach(r=>{
-    const course=getCourseLabel(r), teacher=r["教師"]||"", date0=fixDate(r["日期"]);
-    const changed=COLUMNS_CHANGED.some(col=>r[col]);
-    
-    if(changed){
-      /* 灰底 (原狀) */
-      const k0=key(course,teacher,date0);
-      if(!produced.has(k0)){
-        out.push({...r,__displayDate:date0,__isDisabled:true});
-        produced.add(k0);
-      }
-      /* 異動後 */
-      const dateNew=fixDate(r["異動日期"])||date0;
-      out.push({...r,__displayDate:dateNew,__isModified:true});
-    }else{
-      /* 正常無異動 */
-      out.push({...r,__displayDate:date0});
+    const oriKey=[getCourseLabel(r),r["教師"]||"",fixDate(r["日期"])].join("|");
+    if(r["異動日期"]){          // 有異動 → 用異動後的資料覆蓋
+      const newKey=[getCourseLabel(r),r["教師"]||"",fixDate(r["異動日期"])].join("|");
+      map.set(newKey,{...r,__displayDate:fixDate(r["異動日期"]),__isModified:true});
+    }else if(!map.has(oriKey)){ // 沒異動 → 如尚未被覆蓋才放入
+      map.set(oriKey,{...r,__displayDate:fixDate(r["日期"]),__isModified:false});
     }
   });
-
-  /* 依日期排序並重新計算堂次 */
-  out.sort((a,b)=>a.__displayDate.localeCompare(b.__displayDate));
-  const grp={};
-  out.forEach(it=>{
-    const k=getCourseLabel(it)+"|"+(it["教師"]||"");
-    (grp[k]=grp[k]||[]).push(it);
+  // 日期排序後重編堂次
+  const arr=[...map.values()].sort((a,b)=>a.__displayDate.localeCompare(b.__displayDate));
+  const group={};
+  arr.forEach(it=>{
+    const key=getCourseLabel(it)+"|"+(it["教師"]||"");
+    (group[key]=group[key]||[]).push(it);
   });
-  Object.values(grp).forEach(g=>{
-    let idx=1,total=g.filter(x=>!x.__isDisabled).length;
-    g.forEach(it=>{if(!it.__isDisabled){it.__idx=idx++;it.__total=total;}});
-  });
-  return out;
+  Object.values(group).forEach(g=>g.forEach((it,i)=>{it.__idx=i+1;it.__total=g.length}));
+  return arr;
 }
 
-/* ----------- 主流程 ----------- */
-let calendar,allData;
-document.addEventListener("DOMContentLoaded",async()=>{
-  const res=await fetch(apiUrl);allData=await res.json();
-  const merged=mergeRows(allData);
+/* ---------- 畫面 ---------- */
+let calendar;
+const courseSel=document.getElementById("courseSelect");
 
-  /* 下拉選單 */
-  const sel=document.getElementById('courseSelect');
-  [...new Set(merged.filter(x=>!x.__isDisabled).map(getCourseLabel))]
-    .sort().forEach(c=>{const o=document.createElement("option");o.value=c;o.textContent=c;sel.appendChild(o);});
-  
-  const applyFilt=()=>{const v=sel.value||"";const f=v?merged.filter(x=>getCourseLabel(x)===v):merged;renderCalendar(f);renderList(f);}
-  sel.addEventListener("change",applyFilt); applyFilt();
-});
+fetch(apiUrl)
+.then(r=>r.json())
+.then(raw=>{
+  const data=mergeRows(raw);
+  initSelect(data);
+  render(data);
+  courseSel.onchange=()=>render(courseSel.value?data.filter(d=>getCourseLabel(d)===courseSel.value):data);
+})
+.catch(e=>alert("讀取資料失敗："+e));
 
-/* -------- FullCalendar -------- */
-function renderCalendar(data){
-  const ev=data.map(it=>{
-    const st=fixTime(it["異動起始時間"]||it["起始時間"]),
-          et=fixTime(it["異動結束時間"]||it["結束時間"]),
-          room=it["異動教室"]||it["教室"]||"",
-          title=`${getCourseLabel(it)}\n${st} - ${et}${it["教師"]?" "+it["教師"]:""}${room? "\n"+room:""}${it.__isDisabled?"\n【已異動】":""}`;
+function initSelect(list){
+  const set=[...new Set(list.map(getCourseLabel))].sort();
+  set.forEach(c=>{
+    const o=document.createElement("option");
+    o.value=o.textContent=c;courseSel.appendChild(o);
+  });
+}
+
+function render(list){
+  renderCal(list);
+  renderTable(list);
+}
+
+function renderCal(list){
+  const ev=list.map(r=>{
+    const sT=fixTime(r["異動起始時間"]||r["起始時間"]);
+    const eT=fixTime(r["異動結束時間"]||r["結束時間"]);
+    const title=`${getCourseLabel(r)}\n${sT} - ${eT}${r["教師"]?" "+r["教師"]:""}${r["異動教室"]||r["教室"]?`\n${r["異動教室"]||r["教室"]}`:""}`;
     return{
-      title,start:`${it.__displayDate}T${st}`,end:`${it.__displayDate}T${et}`,
-      backgroundColor:it.__isDisabled?"#888":getColorByName(it["課程名稱"]),
-      textColor:it.__isDisabled?"#fff":"#222",
-      extendedProps:{...it,startTime:st,endTime:et,room}
+      title,
+      start:`${r.__displayDate}T${sT}`,
+      end:`${r.__displayDate}T${eT}`,
+      extendedProps:r
     };
   });
 
   if(calendar)calendar.destroy();
   calendar=new FullCalendar.Calendar(document.getElementById("calendar"),{
-    initialView:"dayGridMonth",locale:"zh-tw",displayEventTime:false, /* 關掉預設時間 */
+    initialView:"dayGridMonth",
+    locale:"zh-tw",
     headerToolbar:{left:"prev,next today",center:"title",right:"dayGridMonth,timeGridWeek,listWeek"},
-    events:ev,eventDidMount:info=>{
-      /* 狀態 icon */
-      const icon=document.createElement("span");icon.textContent="🟡";icon.className="course-icon";
-      const t=info.el.querySelector(".fc-event-title");t&&t.prepend(icon);
-      /* 異動紅字 */
-      if(info.extendedProps.__isModified){
-        ["異動教室","異動起始時間","異動結束時間"].forEach(col=>{
-          if(info.extendedProps[col]){
-            t.innerHTML=t.innerHTML.replace(info.extendedProps[col],
-              `<span class="highlight-red">${info.extendedProps[col]}</span>`);
-          }
-        });
+    slotMinTime:"07:00:00",slotMaxTime:"20:00:00",
+    events:ev,
+    eventDidMount(info){
+      const ext=info.event.extendedProps||{};
+      info.el.style.background=ext.__isModified?"#FFDEB0":""; // 異動後的格子稍微底色
+      // 加紅字
+      if(ext.__isModified){
+        info.el.querySelector(".fc-event-title").innerHTML=
+          info.el.querySelector(".fc-event-title").innerHTML
+            .replace(ext.startTime,`<span class="highlight-red">${ext.startTime}</span>`)
+            .replace(ext.endTime,`<span class="highlight-red">${ext.endTime}</span>`)
+            .replace(ext["異動教室"]||"",`<span class="highlight-red">${ext["異動教室"]||""}</span>`);
       }
-      if(info.extendedProps.__isDisabled)t.style.color="#fff";
     }
-  });calendar.render();
+  });
+  calendar.render();
 }
 
-/* ---------- 列表 ---------- */
-function renderList(data){
-  const rows=data.map(it=>{
-    const st=fixTime(it["異動起始時間"]||it["起始時間"]),
-          et=fixTime(it["異動結束時間"]||it["結束時間"]),
-          room=it["異動教室"]||it["教室"]||"",
-          red=cls=>it[cls]?"highlight-red":"";
-    return `<tr class="${it.__isDisabled?"disabled-bg":""}">
-      <td style="font-size:1.3em;">🟡</td>
-      <td class="${red("異動日期")} ${it.__isDisabled?"disabled-txt":""}">
-        ${it.__displayDate}${it.__isDisabled?'<span class="disabled-tag">已異動</span>':""}</td>
-      <td class="${it.__isDisabled?"disabled-txt":""}">
-        <span class="${red("異動起始時間")}">${st}</span> -
-        <span class="${red("異動結束時間")}">${et}</span></td>
-      <td class="${it.__isDisabled?"disabled-txt":""}">${getCourseLabel(it)}</td>
-      <td class="${it.__isDisabled?"disabled-txt":""}">${it["教師"]||""}</td>
-      <td class="${red("異動教室")} ${it.__isDisabled?"disabled-txt":""}">${room}</td>
-      <td class="${it.__isDisabled?"disabled-txt":""}">${it.__idx?it.__idx+"/"+it.__total:""}</td>
-      <td class="${it.__isDisabled?"disabled-txt":""}">${it["備註"]||""}</td>
-    </tr>`;
-  }).join("");
-  document.getElementById("list-content").innerHTML=`
-    <table><tr>
-      <th>狀態</th><th>日期</th><th>時間</th><th>課程名稱</th><th>教師</th>
-      <th>教室</th><th>堂次</th><th>備註</th></tr>${rows}</table>`;
+function renderTable(list){
+  document.getElementById("list-content").innerHTML=`<table>${[
+    `<tr><th>狀態</th><th>日期</th><th>時間</th><th>課程</th><th>教師</th><th>教室</th><th>堂次</th><th>備註</th></tr>`,
+    ...list.map(r=>{
+      const sT=fixTime(r["異動起始時間"]||r["起始時間"]);
+      const eT=fixTime(r["異動結束時間"]||r["結束時間"]);
+      const cls=r.__isModified?"highlight-red":"";
+      return `<tr class="${r.__isModified?"":"disabled-row"}">
+        <td>🟡</td>
+        <td>${r.__displayDate}${r.__isModified?"<span style='background:#555;color:#fff;border-radius:8px;padding:0 6px;margin-left:4px;font-size:.8em'>異動</span>":""}</td>
+        <td class="${cls}">${sT} - ${eT}</td>
+        <td>${getCourseLabel(r)}</td>
+        <td>${r["教師"]||""}</td>
+        <td class="${cls}">${r["異動教室"]||r["教室"]||""}</td>
+        <td>${r.__idx}/${r.__total}</td>
+        <td>${r["備註"]||""}</td>
+      </tr>`;
+    })
+  ].join("")}</table>`;
 }
 </script>
 </body>
 </html>
+
