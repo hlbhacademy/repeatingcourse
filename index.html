@@ -313,4 +313,54 @@ function renderCalendar(data) {
       }
       if (info.event.extendedProps["異動結束時間"] && !info.event.extendedProps.__isDisabled) {
         titleNode.innerHTML = titleNode.innerHTML.replace(
-          info
+          info.event.extendedProps["異動結束時間"],
+          `<span class="highlight-red">${info.event.extendedProps["異動結束時間"]}</span>`
+        );
+      }
+      titleNode && (titleNode.style.whiteSpace = "pre-line");
+    }
+  });
+  calendar.render();
+}
+
+function renderList(data) {
+  let html = `<table>
+  <tr>
+    <th>狀態</th>
+    <th>日期</th>
+    <th>時間</th>
+    <th>課程名稱</th>
+    <th>教師</th>
+    <th>教室</th>
+    <th>堂次</th>
+    <th>備註</th>
+  </tr>`;
+  for (let item of data) {
+    const date = item.__displayDate;
+    const startTime = fixTime(item["異動起始時間"] || item["起始時間"]);
+    const endTime = fixTime(item["異動結束時間"] || item["結束時間"]);
+    const classroom = item["異動教室"] || item["教室"] || "";
+    const course = getCourseLabel(item);
+    let rowClass = item.__isDisabled ? "disabled-bg" : "";
+    let cellClass = item.__isDisabled ? "disabled-txt" : "";
+    html += `<tr class="${rowClass}">
+      <td style="font-size:1.3em;">🟡</td>
+      <td class="${fieldClass(item, "日期")} ${cellClass}">${date}${item.__isDisabled ? '<span class="disabled-tag">已異動</span>' : ''}</td>
+      <td class="${cellClass}">
+        <span class="${fieldClass(item, "起始時間")}">${startTime}</span>
+        -
+        <span class="${fieldClass(item, "結束時間")}">${endTime}</span>
+      </td>
+      <td class="${cellClass}">${course}</td>
+      <td class="${cellClass}">${item["教師"]||""}</td>
+      <td class="${fieldClass(item, "教室")} ${cellClass}">${classroom}</td>
+      <td class="${cellClass}">${item.__showIdx ? (item.__showIdx + '/' + item.__showTotal) : ''}</td>
+      <td class="${cellClass}">${item["備註"]||""}</td>
+    </tr>`;
+  }
+  html += `</table>`;
+  document.getElementById('list-content').innerHTML = html;
+}
+</script>
+</body>
+</html>
