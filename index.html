@@ -40,8 +40,9 @@
       margin-right: 2px;
       vertical-align: middle;
     }
-    .changed .fc-event-title, .changed {
-      color: #0A217A !important;
+    /* 異動資料紅色加粗 */
+    .highlight-red {
+      color: #C00000 !important;
       font-weight: bold !important;
     }
     #list-container { max-width: 1100px; margin: 2em auto; }
@@ -77,33 +78,26 @@
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
 
-// 判斷是否要用異動內容（只要有任一異動欄不空就用異動資料）
+// 判斷異動：只要有異動欄位就直接只顯示異動資料
 function useChanged(item) {
   return item["異動日期"] || item["異動起始時間"] || item["異動結束時間"] || item["異動教室"];
 }
 
-// 將 Google Sheet 回傳的奇怪日期（如1899...）或"2025/6/17"轉成yyyy-mm-dd
+// 格式修正
 function fixDate(dateStr) {
   if (!dateStr) return "";
-  // 若像1899-12-30T09:10:00.000Z這種，直接回空
   if (dateStr.startsWith("1899") || dateStr.startsWith("Invalid")) return "";
-  // 若像 2025/6/17
   if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(dateStr)) {
     const [y, m, d] = dateStr.split("/");
     return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
   }
-  // 若像 2025-6-17
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(dateStr)) {
     const [y, m, d] = dateStr.split("-");
     return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
   }
-  // 若已經是yyyy-mm-dd
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-  // 其他就直接回原本
   return dateStr;
 }
-
-// 只允許 09:00 或 9:00 都轉成 09:00
 function fixTime(t) {
   if (!t) return "";
   let m = t.match(/^(\d{1,2}):(\d{2})/);
@@ -111,27 +105,60 @@ function fixTime(t) {
     let h = m[1].padStart(2,"0");
     return `${h}:${m[2]}`;
   }
-  // 若時間是日期格式(錯誤)，回空
   if (t.startsWith("1899") || t.startsWith("Invalid")) return "";
   return t;
 }
-
 function courseSortKey(courseName) {
   const match = courseName.match(/^([一二三])[上下]/);
   let n = 0;
   if (match) n = {一:1,二:2,三:3}[match[1]];
   return n + courseName;
 }
-
 let allData = [];
 let calendar = null;
+
+// 過濾重覆（只顯示異動後資料，不顯示原始資料）
+function getFilteredData(data) {
+  // 若同一組課程(課程名稱、教師、教室、日期、起始、結束)有異動，則只保留異動的那筆
+  // 以「異動日期+課程名稱+教師」為 key
+  const existed = new Set();
+  const result = [];
+  for (let item of data) {
+    const isChanged = useChanged(item);
+    let key = "";
+    if (isChanged) {
+      key = [
+        fixDate(item["異動日期"]),
+        getCourseLabel(item),
+        (item["教師"]||"")
+      ].join("|");
+      existed.add(key);
+      result.push(item); // 直接放入異動筆
+    }
+  }
+  for (let item of data) {
+    if (useChanged(item)) continue; // 異動資料已處理
+    let key = [
+      fixDate(item["日期"]),
+      getCourseLabel(item),
+      (item["教師"]||"")
+    ].join("|");
+    if (!existed.has(key)) {
+      result.push(item);
+    }
+  }
+  return result;
+}
 
 document.addEventListener('DOMContentLoaded', async function () {
   const res = await fetch(apiUrl);
   const data = await res.json();
   allData = data;
 
-  const courses = [...new Set(data.map(item => getCourseLabel(item)))].sort((a, b) => {
+  // 使用只保留異動後的資料
+  const filteredData = getFilteredData(data);
+
+  const courses = [...new Set(filteredData.map(item => getCourseLabel(item)))].sort((a, b) => {
     return courseSortKey(a) > courseSortKey(b) ? 1 : -1;
   });
   const select = document.getElementById('courseSelect');
@@ -142,12 +169,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     select.appendChild(opt);
   });
 
-  renderCalendar(data);
-  renderList(data);
+  renderCalendar(filteredData);
+  renderList(filteredData);
 
   select.addEventListener('change', function () {
     const value = this.value;
-    const filtered = (!value) ? allData : allData.filter(item => getCourseLabel(item) === value);
+    const filtered = (!value) ? filteredData : filteredData.filter(item => getCourseLabel(item) === value);
     renderCalendar(filtered);
     renderList(filtered);
   });
@@ -156,7 +183,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 function getCourseLabel(item) {
   return item["課程名稱"].replace(/\s+/g, ' ').trim();
 }
-
 function getColorByName(name) {
   const colors = [
     '#FFB6C1','#90EE90','#87CEFA','#FFD700','#FFA07A',
@@ -167,7 +193,6 @@ function getColorByName(name) {
   for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
   return colors[hash % colors.length];
 }
-
 function getCourseStatus(courseName, eventDate, allData) {
   const allEvents = allData.filter(x => getCourseLabel(x) === courseName)
     .sort((a, b) => new Date(a["日期"]) - new Date(b["日期"]));
@@ -185,7 +210,6 @@ function getCourseStatus(courseName, eventDate, allData) {
     return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" };
   }
 }
-
 function renderCalendar(data) {
   const events = data.map(item => {
     const isChanged = useChanged(item);
@@ -196,18 +220,19 @@ function renderCalendar(data) {
     const status = getCourseStatus(course, date, allData);
     const bgColor = getColorByName(item["課程名稱"]);
     const classroom = isChanged ? (item["異動教室"] || item["教室"] || "") : (item["教室"] || "");
+    // span 標記課名和教室紅字
+    const courseLabel = `<span class="${isChanged?'highlight-red':''}">${course}</span>`;
+    const classroomLabel = `<span class="${isChanged?'highlight-red':''}">${classroom}</span>`;
     const title = `${course}\n${startTime}-${endTime} ${item["教師"] ? item["教師"] : ""}${classroom ? "\n" + classroom : ""}`;
     return {
-      title: title,
+      title: title, // 原本title文字，真正顏色在 eventDidMount 插入
       start: `${date}T${startTime}`,
       end: `${date}T${endTime}`,
       classNames: (isChanged ? ['changed'] : []).concat(getClass(item)),
-      extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label, isChanged: isChanged }
+      extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label, isChanged: isChanged, course, classroom }
     };
   });
-
   if (calendar) calendar.destroy();
-
   calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     initialView: 'dayGridMonth',
     locale: 'zh-tw',
@@ -234,9 +259,18 @@ function renderCalendar(data) {
         titleNode.prepend(iconNode);
       }
       info.el.style.backgroundColor = info.event.extendedProps.bg;
+      // 異動資料的課名、教室紅色加粗
       if (info.event.extendedProps.isChanged) {
-        info.el.style.color = '#0A217A';
-        info.el.style.setProperty('color', '#0A217A', 'important');
+        // 課名改紅
+        if (titleNode) {
+          titleNode.innerHTML = `<span class="highlight-red">${info.event.extendedProps.course}</span>` +
+            titleNode.innerHTML.replace(info.event.extendedProps.course, "");
+          // 教室在換行時也要紅
+          let txt = titleNode.innerHTML.replace(info.event.extendedProps.classroom, `<span class="highlight-red">${info.event.extendedProps.classroom}</span>`);
+          titleNode.innerHTML = txt;
+        }
+        info.el.style.color = '#C00000';
+        info.el.style.setProperty('color', '#C00000', 'important');
         info.el.style.fontWeight = "bold";
       } else {
         info.el.style.color = "#222";
@@ -250,10 +284,8 @@ function renderCalendar(data) {
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
   });
-
   calendar.render();
 }
-
 function renderList(data) {
   const sorted = [...data].sort((a, b) => {
     let da = useChanged(a) ? a["異動日期"] : a["日期"];
@@ -285,9 +317,9 @@ function renderList(data) {
       <td style="font-size:1.3em;">${status.icon}</td>
       <td>${date}</td>
       <td>${startTime}-${endTime}</td>
-      <td style="font-weight:bold;${isChanged?'color:#0A217A;':''}">${course}</td>
+      <td class="${isChanged ? 'highlight-red' : ''}">${course}</td>
       <td>${item["教師"]||""}</td>
-      <td>${classroom}</td>
+      <td class="${isChanged ? 'highlight-red' : ''}">${classroom}</td>
       <td>${item["當前堂數"]||""}/${item["總堂數"]||""}</td>
       <td>${item["備註"]||""}</td>
     </tr>`;
@@ -295,7 +327,6 @@ function renderList(data) {
   html += `</table>`;
   document.getElementById('list-content').innerHTML = html;
 }
-
 function getClass(item) {
   const result = [];
   if (Number(item["當前堂數"]) >= Math.ceil(Number(item["總堂數"]) / 3)) result.push("critical");
