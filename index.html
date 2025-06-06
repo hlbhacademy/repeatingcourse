@@ -28,7 +28,6 @@
       font-size: 1.06em;
       word-break: break-all;
     }
-    /* 週檢視顯示完整內容且字一定黑色 */
     .fc-timegrid-event, .fc-timegrid-event .fc-event-title {
       color: #222 !important;
       min-height: 50px !important;
@@ -36,11 +35,15 @@
       white-space: pre-line !important;
       overflow: visible !important;
     }
-    /* 事件狀態icon */
     .course-icon {
       font-size: 1.3em;
       margin-right: 2px;
       vertical-align: middle;
+    }
+    /* 異動課程：加粗深藍字 */
+    .changed .fc-event-title, .changed {
+      color: #0A217A !important;
+      font-weight: bold !important;
     }
     #list-container { max-width: 1100px; margin: 2em auto; }
     #list-container table { border-collapse: collapse; width: 100%; }
@@ -74,6 +77,11 @@
   </div>
 <script>
 const apiUrl = "https://script.google.com/macros/s/AKfycbxbpuFcInB-xFFGSVJReKEbp2DE5k8mDs8aKx80o94_fICApzgZ7_RI-j2kbDikG0jo/exec";
+
+// 判斷是否要顯示異動
+function useChanged(item) {
+  return item["異動日期"] || item["異動起始時間"] || item["異動結束時間"];
+}
 
 function courseSortKey(courseName) {
   const match = courseName.match(/^([一二三])[上下]/);
@@ -148,26 +156,21 @@ function getCourseStatus(courseName, eventDate, allData) {
 
 function renderCalendar(data) {
   const events = data.map(item => {
-    let date = item["日期"];
-    if (typeof date === "string" && date.includes("T")) date = date.split("T")[0];
-    date = date.replace(/\//g, "-");
-    let [yyyy, mm, dd] = date.split("-");
-    if (mm && mm.length === 1) mm = "0" + mm;
-    if (dd && dd.length === 1) dd = "0" + dd;
-    const dateFixed = `${yyyy}-${mm}-${dd}`;
-    const startTime = item["起始時間"]?.slice(0,5);
-    const endTime = item["結束時間"]?.slice(0,5);
+    // 用異動欄位覆蓋原資料
+    const isChanged = useChanged(item);
+    const date = isChanged ? item["異動日期"] : item["日期"];
+    const startTime = isChanged ? item["異動起始時間"] : item["起始時間"];
+    const endTime = isChanged ? item["異動結束時間"] : item["結束時間"];
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, allData);
     const bgColor = getColorByName(item["課程名稱"]);
-    // icon單獨給，不放進title
     const title = `${course}\n${startTime}-${endTime}${item["教師"] ? " " + item["教師"] : ""}`;
     return {
       title: title,
-      start: `${dateFixed}T${item["起始時間"]}`,
-      end: `${dateFixed}T${item["結束時間"]}`,
-      classNames: getClass(item),
-      extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label }
+      start: `${date.replace(/\//g, "-")}T${startTime}`,
+      end: `${date.replace(/\//g, "-")}T${endTime}`,
+      classNames: (isChanged ? ['changed'] : []).concat(getClass(item)),
+      extendedProps: { ...item, bg: bgColor, statusIcon: status.icon, statusLabel: status.label, isChanged: isChanged }
     };
   });
 
@@ -181,8 +184,8 @@ function renderCalendar(data) {
       center: 'title',
       right: 'dayGridMonth,timeGridWeek,listWeek'
     },
-    slotMinTime: '07:00:00', // 最早顯示
-    slotMaxTime: '20:00:00', // 最晚顯示
+    slotMinTime: '07:00:00',
+    slotMaxTime: '20:00:00',
     events,
     eventOrder: "title,start",
     dayMaxEvents: false,
@@ -195,20 +198,25 @@ function renderCalendar(data) {
       let iconNode = document.createElement("span");
       iconNode.className = "course-icon";
       iconNode.innerText = info.event.extendedProps.statusIcon;
-      // 找到事件標題
       let titleNode = info.el.querySelector(".fc-event-title");
       if (titleNode && !titleNode.querySelector('.course-icon')) {
         titleNode.prepend(iconNode);
       }
       // 背景和字色
       info.el.style.backgroundColor = info.event.extendedProps.bg;
-      info.el.style.color = "#222";
-      info.el.style.setProperty('color', '#222', 'important');
-      info.el.style.fontWeight = "bold";
+      // 若是異動事件，改深藍粗體
+      if (info.event.extendedProps.isChanged) {
+        info.el.style.color = '#0A217A';
+        info.el.style.setProperty('color', '#0A217A', 'important');
+        info.el.style.fontWeight = "bold";
+      } else {
+        info.el.style.color = "#222";
+        info.el.style.setProperty('color', '#222', 'important');
+        info.el.style.fontWeight = "bold";
+      }
       info.el.style.borderRadius = "7px";
       info.el.style.border = "none";
       info.el.title = info.event.extendedProps.statusLabel;
-      // 讓週檢視自動撐開事件高度
       info.el.style.height = "auto";
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
@@ -219,7 +227,8 @@ function renderCalendar(data) {
 
 function renderList(data) {
   const sorted = [...data].sort((a, b) => {
-    let da = a["日期"], db = b["日期"];
+    let da = useChanged(a) ? a["異動日期"] : a["日期"];
+    let db = useChanged(b) ? b["異動日期"] : b["日期"];
     if (typeof da === "string" && da.includes("T")) da = da.split("T")[0];
     if (typeof db === "string" && db.includes("T")) db = db.split("T")[0];
     da = da.replace(/\//g, "-");
@@ -238,18 +247,17 @@ function renderList(data) {
     <th>備註</th>
   </tr>`;
   for (let item of sorted) {
-    let date = item["日期"];
-    if (typeof date === "string" && date.includes("T")) date = date.split("T")[0];
-    date = date.replace(/\//g, "-");
-    const startTime = item["起始時間"]?.slice(0,5);
-    const endTime = item["結束時間"]?.slice(0,5);
+    const isChanged = useChanged(item);
+    const date = isChanged ? item["異動日期"] : item["日期"];
+    const startTime = isChanged ? item["異動起始時間"] : item["起始時間"];
+    const endTime = isChanged ? item["異動結束時間"] : item["結束時間"];
     const course = getCourseLabel(item);
     const status = getCourseStatus(course, date, data);
     html += `<tr>
       <td style="font-size:1.3em;">${status.icon}</td>
       <td>${date}</td>
       <td>${startTime}-${endTime}</td>
-      <td style="font-weight:bold;color:#336;">${getCourseLabel(item)}</td>
+      <td style="font-weight:bold;${isChanged?'color:#0A217A;':''}">${course}</td>
       <td>${item["教師"]||""}</td>
       <td>${item["教室"]||""}</td>
       <td>${item["當前堂數"]||""}/${item["總堂數"]||""}</td>
@@ -268,3 +276,4 @@ function getClass(item) {
 </script>
 </body>
 </html>
+
