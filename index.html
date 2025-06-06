@@ -40,12 +40,17 @@
       const start = `${dateFixed}T${item["起始時間"]}`;
       const end = `${dateFixed}T${item["結束時間"]}`;
       const color = getColorByName(item["課程名稱"]);
+      // 異動自動標紅框
+      const isChanged = item["備註"] && item["備註"].includes("異動");
       return {
         title: `${item["課程名稱"]}（${item["教師"]}／${item["教室"]}）`,
         start,
         end,
         backgroundColor: color,
-        classNames: getClass(item),
+        classNames: [
+          ...getClass(item),   // 原有條件 class
+          isChanged ? "changed" : ""
+        ],
         extendedProps: item
       };
     });
@@ -60,9 +65,22 @@
       },
       events,
       eventDidMount: function(info) {
+        // 滑鼠移上顯示「所有」欄位
         const p = info.event.extendedProps;
-        const tooltip = `教師：${p["教師"]}\n教室：${p["教室"]}\n堂數：${p["當前堂數"]}/${p["總堂數"]}\n備註：${p["備註"]}`;
+        let tooltip = '';
+        for (const key in p) {
+          tooltip += `${key}：${p[key]}\n`;
+        }
         info.el.title = tooltip;
+      },
+      eventClick: function(info) {
+        // 點擊顯示「所有」欄位
+        const p = info.event.extendedProps;
+        let detail = "";
+        for (const key in p) {
+          detail += `${key}：${p[key]}\n`;
+        }
+        alert(detail);
       }
     });
 
