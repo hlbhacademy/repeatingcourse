@@ -94,16 +94,15 @@ function getCourseStatus(courseName, eventDate, allData) {
   if (!allEvents.length) return { icon: "", color: "#aaa", label: "" };
   const total = parseInt(allEvents[0]["總堂數"] || allEvents.length);
   const today = new Date();
-  const eventDay = new Date(eventDate);
   const lastDay = new Date(allEvents[allEvents.length - 1]["日期"]);
   const finishedCount = allEvents.filter(e => new Date(e["日期"]) < today).length;
   if (today > lastDay) {
-    return { icon: "🔴", color: "#e74c3c", label: "已結束" };
+    return { icon: "🔴", color: "#e74c3c", label: "紅燈：課程已結束" };
   }
   if (finishedCount < total / 3) {
-    return { icon: "🟢", color: "#27ae60", label: "剛開始" };
+    return { icon: "🟢", color: "#27ae60", label: "綠燈：上課總時數未達1/3" };
   } else {
-    return { icon: "🟡", color: "#f7b731", label: "進行中已達1/3" };
+    return { icon: "🟡", color: "#f7b731", label: "黃燈：上課總時數已達1/3" };
   }
 }
 
@@ -171,7 +170,7 @@ function renderCalendar(data) {
       end: `${date}T${endTime}`,
       classNames: item.__isStrong ? ["calendar-strong"] : [],
       backgroundColor: getColorByName(course),
-      extendedProps: { ...item, statusIcon: status.icon }
+      extendedProps: { ...item, statusIcon: status.icon, statusTip: status.label }
     };
   });
   if (calendar) calendar.destroy();
@@ -202,6 +201,8 @@ function renderCalendar(data) {
         info.el.style.border = "3px solid #c00";
         info.el.style.boxShadow = "0 0 3px #c00";
       }
+      // 狀態icon hover 說明
+      info.el.title = info.event.extendedProps.statusTip || "";
       titleNode && (titleNode.style.whiteSpace = "pre-line");
     }
   });
@@ -226,8 +227,14 @@ function renderList(data) {
     const classroom = item["教室"] || "";
     const course = getCourseLabel(item);
     const strongClass = item.__isStrong ? "bold-outline" : "";
+
+    // 狀態icon與說明
+    let status = getCourseStatus(course, date, allData);
+    item.__statusIcon = status.icon;
+    item.__statusTip = status.label;
+
     html += `<tr class="${strongClass}">
-      <td style="font-size:1.3em;">🟡</td>
+      <td style="font-size:1.3em;" title="${item.__statusTip || ""}">${item.__statusIcon || "🟡"}</td>
       <td class="${item.__isStrong && item["異動日期"] ? "strong-txt" : ""}">${date}</td>
       <td>
         <span>${startTime}</span> - <span>${endTime}</span>
@@ -240,7 +247,6 @@ function renderList(data) {
   }
   html += `</table>`;
 
-  // 顯示本課程堂數
   let shownCourse = document.getElementById("courseSelect").value;
   let filtered = (!shownCourse) ? data : data.filter(item => getCourseLabel(item) === shownCourse);
   let total = filtered.length;
